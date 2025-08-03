@@ -4,7 +4,11 @@ const ConfiguracionSistema = db.ConfiguracionSistema
 
 const getAllConfiguracionSistema = async () => {
     try {
-        const configuracionSistema = await ConfiguracionSistema.findAll()
+        const configuracionSistema = await ConfiguracionSistema.findAll({
+            attributes: {
+                exclude: ['fechaActualizacion', 'createdAt', 'updatedAt']
+            }
+        })
         return ResponseHandler.success(configuracionSistema)
     } catch (error) {
         throw error
@@ -16,6 +20,9 @@ const getConfiguracionSistemaById = async (id) => {
         const configuracionSistema = await ConfiguracionSistema.findOne({
             where: {
                 configuracionId: id,
+            },
+            attributes: {
+                exclude: ['fechaActualizacion', 'createdAt', 'updatedAt']
             }
         })
         return ResponseHandler.success(configuracionSistema)
@@ -41,7 +48,7 @@ const updateConfiguracionSistema = async (data, id) => {
             porcentajeComisionNivel,
             actualizadoPor
         } = data
-        
+
         const configuracionSistema = await ConfiguracionSistema.update({
             precioSuscripcion: precioSuscripcion,
             gananciasPorLike: gananciasPorLike,

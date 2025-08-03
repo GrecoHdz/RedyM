@@ -37,6 +37,15 @@ app.use(express.urlencoded({
 }))
 
 const db = require("./src/models")
+
+db.sequelize.authenticate()
+    .then(() => {
+        console.log('✅ Conexión a Azure MySQL exitosa');
+    })
+    .catch(err => {
+        console.error('❌ Error conectando a Azure MySQL:', err);
+    });
+
 db.sequelize.sync()
     .then(() => {
         console.log("Synced db.")

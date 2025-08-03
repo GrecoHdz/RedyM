@@ -4,7 +4,9 @@ const Usuario = db.Usuario
 
 const getAllUsuario = async () => {
     try {
-        const usuario = await Usuario.findAll()
+        const usuario = await Usuario.findAll({
+            attributes: { exclude: ['clave', 'createdAt', 'updatedAt'] }
+        })
         return ResponseHandler.success(usuario)
     } catch (error) {
         throw error
@@ -16,6 +18,9 @@ const getUsuarioById = async (id) => {
         const usuario = await Usuario.findOne({
             where: {
                 usuarioId: id,
+            },
+            attributes: {
+                exclude: ['clave', 'createdAt', 'updatedAt']
             }
         })
         return ResponseHandler.success(usuario)

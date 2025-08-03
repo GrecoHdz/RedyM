@@ -1,3 +1,9 @@
+const fs = require('fs');
+const path = require('path');
+
+// lee el certificado SSL
+const sslCert = fs.readFileSync(path.join(__dirname, 'ssl-cert.pem'), 'utf8');
+
 module.exports = {
   "development": {
     "username": process.env.DB_USER,
@@ -7,6 +13,13 @@ module.exports = {
     "dialect": "mysql",
     "port": process.env.DB_PORT,
     "timezone": '-06:00',
+    "dialectOptions": {
+      "ssl": {
+        "require": true,
+        "rejectUnauthorized": false,
+        "ca": sslCert
+      }
+    },
     "define": {
       "freezeTableName": true,
       "charset": "utf8",
@@ -23,6 +36,13 @@ module.exports = {
     "host": process.env.PROD_DB_HOST,
     "dialect": "mysql",
     "timezone": '-06:00',
+    "dialectOptions": {
+      "ssl": {
+        "require": true,
+        "rejectUnauthorized": false,
+        "ca": sslCert
+      }
+    },
     "define": {
       "freezeTableName": true,
       "charset": "utf8",
