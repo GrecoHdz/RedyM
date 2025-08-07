@@ -9,6 +9,7 @@ router.get('/:id', verifyToken, usuarioControllers.getUsuarioById)
 router.post('/login', usuarioControllers.login)
 router.post('/logout', usuarioControllers.logout)
 router.post('/', [ValidationRules(), validate], usuarioControllers.createUsuario)
+router.post('/suscripcion', verifyToken, usuarioControllers.subscribcion)
 router.put('/:id', [verifyToken, ValidationRules(), validate], usuarioControllers.updateUsuario)
 router.delete('/:id', verifyToken, usuarioControllers.deleteUsuario)
 

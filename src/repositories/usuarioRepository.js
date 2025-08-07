@@ -1,6 +1,14 @@
 const ResponseHandler = require('../utils/responseHandler')
 const db = require('../models')
+const { sequelize } = require("../models")
+const { QueryTypes, Transaction, } = require('sequelize')
+const { Op } = require('sequelize')
 const Usuario = db.Usuario
+const TransaccionBancaria = db.TransaccionBancaria
+const MatrizReferidos = db.MatrizReferidos
+const ConfiguracionSistema = db.ConfiguracionSistema
+const ComisionReferido = db.ComisionReferido
+const SaldoUsuario = db.SaldoUsuario
 
 const getAllUsuario = async () => {
     try {
@@ -120,11 +128,94 @@ const login = async (correo) => {
     }
 }
 
+const subscribcion = async (data) => {
+    const transaction = await db.sequelize.transaction()
+    try {
+        const {
+            usuarioId,
+            tipoTransaccionId,
+            monto,
+            numeroReferencia,
+            banco,
+            cuentaBancaria,
+            comprobanteUrl,
+            procesadoPor,
+            observaciones
+        } = data
+
+        const usuario = await Usuario.findOne({
+            where: {
+                usuarioId: usuarioId,
+                estado: 1
+            },
+            transaction
+        })
+
+        if (!usuario) {
+            await transaction.rollback()
+            return ResponseHandler.error('Usuario no encontrado o inactivo')
+        }
+
+        if (usuario.esSuscriptor) {
+            await transaction.rollback()
+            return ResponseHandler.error('El usuario ya tiene una suscripción activa')
+        }
+
+        // Crear la transacción bancaria
+        const transaccion = await TransaccionBancaria.create({
+            usuarioId: usuarioId,
+            tipoTransaccionId: tipoTransaccionId,
+            monto: monto,
+            numeroReferencia: numeroReferencia,
+            banco: banco,
+            cuentaBancaria: cuentaBancaria,
+            comprobanteUrl: comprobanteUrl,
+            estadoTransaccionId: 2, // aprobada
+            fechaSolicitud: new Date(),
+            fechaProcesamiento: new Date(),
+            procesadoPor: procesadoPor,
+            observaciones: observaciones
+        }, { transaction })
+
+        // Actualizar usuario como suscriptor
+        await Usuario.update({
+            esSuscriptor: true,
+            fechaSuscripcion: new Date()
+        }, {
+            where: { usuarioId: usuarioId },
+            transaction
+        })
+
+        // Crear o actualizar saldo del usuario
+        const [saldoUsuario, created] = await SaldoUsuario.findOrCreate({
+            where: { usuarioId: usuarioId },
+            defaults: {
+                usuarioId: usuarioId,
+                saldoPorLikes: 0,
+                saldoPorReferidos: 0,
+                saldoRetirado: 0,
+                saldoDisponible: 0,
+                estado: 1
+            },
+            transaction
+        })
+
+        await transaction.commit()
+
+        return ResponseHandler.success({ usuarioId: usuario.usuarioId, transaccionId: transaccion.transaccionId },
+                                       'Usuario suscrito exitosamente')
+    } catch (error) {
+        await transaction.rollback()
+        throw error
+    }
+}
+
 module.exports = {
     getAllUsuario,
     getUsuarioById,
     createUsuario,
     updateUsuario,
     deleteUsuario,
-    login
+    login,
+    subscribcion,
 }

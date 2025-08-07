@@ -158,6 +158,40 @@ const logout = async (req, res, next) => {
     }
 }
 
+const subscribcion = async (req, res, next) => {
+
+    const {
+        usuarioId,
+        tipoTransaccionId,
+        monto,
+        numeroReferencia,
+        banco,
+        cuentaBancaria,
+        comprobanteUrl,
+        procesadoPor,
+        observaciones
+    } = req.body;
+
+    const data = {
+        usuarioId,
+        tipoTransaccionId,
+        monto,
+        numeroReferencia,
+        banco,
+        cuentaBancaria,
+        comprobanteUrl,
+        procesadoPor,
+        observaciones
+    }
+
+    try {
+        const usuario = await usuarioServices.subscribcion(data);
+        return res.status(200).json(usuario);
+    } catch (error) {
+        next(error);
+    }
+}
+
 module.exports = {
     getAllUsuario,
     getUsuarioById,
@@ -165,5 +199,6 @@ module.exports = {
     updateUsuario,
     deleteUsuario,
     login,
-    logout
+    logout,
+    subscribcion,
 }

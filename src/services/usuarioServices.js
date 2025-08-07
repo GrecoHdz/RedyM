@@ -99,6 +99,15 @@ const login = async (data, res) => {
     }
 }
 
+const subscribcion = async (data) => {
+    try {
+        const usuario = await usuarioRepository.subscribcion(data);
+        return (usuario) ? usuario : [];
+    } catch (error) {
+        throw error;
+    }
+
+}
 
 module.exports = {
     getAllUsuario,
@@ -106,5 +115,6 @@ module.exports = {
     createUsuario,
     updateUsuario,
     deleteUsuario,
-    login
+    login,
+    subscribcion,
 }
