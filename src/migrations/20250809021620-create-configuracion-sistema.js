@@ -9,10 +9,25 @@ module.exports = {
         primaryKey: true,
         type: Sequelize.INTEGER
       },
-      precioSuscripcion: {
+      precioSuscripcionNivel1: {
+        type: Sequelize.DOUBLE
+      },
+      precioSuscripcionNivel2: {
+        type: Sequelize.DOUBLE
+      },
+      precioSuscripcionNivel3: {
+        type: Sequelize.DOUBLE
+      },
+      precioSuscripcionNivel4: {
+        type: Sequelize.DOUBLE
+      },
+      precioSuscripcionNivel5: {
         type: Sequelize.DOUBLE
       },
       gananciasPorLike: {
+        type: Sequelize.DOUBLE
+      },
+      gananciasPorCompartir: {
         type: Sequelize.DOUBLE
       },
       porcentajeComisionNivel: {

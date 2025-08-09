@@ -2,8 +2,13 @@ const { body, validationResult } = require('express-validator')
 
 const ValidationRules = () => {
     return [
-        body('precioSuscripcion').notEmpty().withMessage("El campo es obligatorio").isDecimal(),
+        body('precioSuscripcionNivel1').notEmpty().withMessage("El campo es obligatorio").isDecimal(),
+        body('precioSuscripcionNivel2').notEmpty().withMessage("El campo es obligatorio").isDecimal(),
+        body('precioSuscripcionNivel3').notEmpty().withMessage("El campo es obligatorio").isDecimal(),
+        body('precioSuscripcionNivel4').notEmpty().withMessage("El campo es obligatorio").isDecimal(),
+        body('precioSuscripcionNivel5').notEmpty().withMessage("El campo es obligatorio").isDecimal(),
         body('gananciasPorLike').notEmpty().withMessage("El campo es obligatorio").isDecimal(),
+        body('gananciasPorCompartir').notEmpty().withMessage("El campo es obligatorio").isDecimal(),
         body('porcentajeComisionNivel').notEmpty().withMessage("El campo es obligatorio").isDecimal(),
     ];
 }

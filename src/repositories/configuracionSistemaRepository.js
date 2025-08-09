@@ -43,15 +43,25 @@ const createConfiguracionSistema = async (data) => {
 const updateConfiguracionSistema = async (data, id) => {
     try {
         const {
-            precioSuscripcion,
+            precioSuscripcionNivel1,
+            precioSuscripcionNivel2,
+            precioSuscripcionNivel3,
+            precioSuscripcionNivel4,
+            precioSuscripcionNivel5,
             gananciasPorLike,
+            gananciasPorCompartir,
             porcentajeComisionNivel,
             actualizadoPor
         } = data
 
         const configuracionSistema = await ConfiguracionSistema.update({
-            precioSuscripcion: precioSuscripcion,
+            precioSuscripcionNivel1: precioSuscripcionNivel1,
+            precioSuscripcionNivel2: precioSuscripcionNivel2,
+            precioSuscripcionNivel3: precioSuscripcionNivel3,
+            precioSuscripcionNivel4: precioSuscripcionNivel4,
+            precioSuscripcionNivel5: precioSuscripcionNivel5,
             gananciasPorLike: gananciasPorLike,
+            gananciasPorCompartir: gananciasPorCompartir,
             porcentajeComisionNivel: porcentajeComisionNivel,
             actualizadoPor: actualizadoPor,
             fechaActualizacion: new Date(),

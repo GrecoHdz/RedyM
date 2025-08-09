@@ -23,14 +23,24 @@ const getConfiguracionSistemaById = async (req, res, next) => {
 const createConfiguracionSistema = async (req, res, next) => {
 
     const {
-        precioSuscripcion,
+        precioSuscripcionNivel1,
+        precioSuscripcionNivel2,
+        precioSuscripcionNivel3,
+        precioSuscripcionNivel4,
+        precioSuscripcionNivel5,
         gananciasPorLike,
+        gananciasPorCompartir,
         porcentajeComisionNivel,
     } = req.body;
 
     const data = {
-        precioSuscripcion,
+        precioSuscripcionNivel1,
+        precioSuscripcionNivel2,
+        precioSuscripcionNivel3,
+        precioSuscripcionNivel4,
+        precioSuscripcionNivel5,
         gananciasPorLike,
+        gananciasPorCompartir,
         porcentajeComisionNivel,
     }
 
@@ -46,15 +56,25 @@ const updateConfiguracionSistema = async (req, res, next) => {
     const id = req.params.id;
 
     const {
-        precioSuscripcion,
+        precioSuscripcionNivel1,
+        precioSuscripcionNivel2,
+        precioSuscripcionNivel3,
+        precioSuscripcionNivel4,
+        precioSuscripcionNivel5,
         gananciasPorLike,
+        gananciasPorCompartir,
         porcentajeComisionNivel,
         actualizadoPor,
     } = req.body;
 
     const data = {
-        precioSuscripcion,
+        precioSuscripcionNivel1,
+        precioSuscripcionNivel2,
+        precioSuscripcionNivel3,
+        precioSuscripcionNivel4,
+        precioSuscripcionNivel5,
         gananciasPorLike,
+        gananciasPorCompartir,
         porcentajeComisionNivel,
         actualizadoPor,
     }
