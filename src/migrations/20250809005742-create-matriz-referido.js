@@ -24,6 +24,12 @@ module.exports = {
       fechaIngreso: {
         type: Sequelize.DATE
       },
+      esForzado: {
+        type: Sequelize.BOOLEAN
+      },
+      nivelAbsoluto: {
+        type: Sequelize.INTEGER
+      },
       estado: {
         type: Sequelize.BOOLEAN
       },

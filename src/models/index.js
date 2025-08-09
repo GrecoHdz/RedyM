@@ -46,4 +46,26 @@ Object.keys(db).forEach(modelName => {
 db.sequelize = sequelize
 db.Sequelize = Sequelize
 
+
+// En tu archivo de modelos donde defines las asociaciones
+db.MatrizReferido.belongsTo(db.Usuario, {
+    foreignKey: 'referidoId',
+    as: 'referido'
+});
+
+db.MatrizReferido.belongsTo(db.Usuario, {
+    foreignKey: 'referenteId',
+    as: 'referente'
+});
+
+db.ComisionReferido.belongsTo(db.Usuario, {
+    foreignKey: 'beneficiarioId',
+    as: 'beneficiario'
+});
+
+db.ComisionReferido.belongsTo(db.Usuario, {
+    foreignKey: 'referidoId',
+    as: 'referido'
+});
+
 module.exports = db

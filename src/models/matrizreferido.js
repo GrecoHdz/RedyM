@@ -3,7 +3,7 @@ const {
   Model
 } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
-  class MatrizReferidos extends Model {
+  class MatrizReferido extends Model {
     /**
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
@@ -13,7 +13,7 @@ module.exports = (sequelize, DataTypes) => {
       // define association here
     }
   }
-  MatrizReferidos.init({
+  MatrizReferido.init({
     matrizId: {
       type: DataTypes.INTEGER,
       primaryKey: true,
@@ -25,10 +25,12 @@ module.exports = (sequelize, DataTypes) => {
     nivel: DataTypes.INTEGER,
     posicion: DataTypes.INTEGER,
     fechaIngreso: DataTypes.DATE,
+    esForzado: DataTypes.BOOLEAN,
+    nivelAbsoluto: DataTypes.INTEGER,
     estado: DataTypes.BOOLEAN
   }, {
     sequelize,
-    modelName: 'MatrizReferidos',
+    modelName: 'MatrizReferido',
   });
-  return MatrizReferidos;
+  return MatrizReferido;
 };
