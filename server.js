@@ -8,6 +8,14 @@ const {
 } = require('express-validator')
 require('dotenv').config()
 
+const cloudinary = require('cloudinary').v2;
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true,
+});
+
 const PORT = process.env.PORT
 const whiteList = [process.env.ORIGIN]
 console.log("lista blanca:", whiteList)
@@ -40,10 +48,10 @@ const db = require("./src/models")
 
 db.sequelize.authenticate()
     .then(() => {
-        console.log('✅ Conexión a Azure MySQL exitosa');
+        console.log('Conexión a Azure MySQL exitosa');
     })
     .catch(err => {
-        console.error('❌ Error conectando a Azure MySQL:', err);
+        console.error('Error conectando a Azure MySQL:', err);
     });
 
 db.sequelize.sync()
