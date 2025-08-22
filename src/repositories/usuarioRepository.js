@@ -5,7 +5,7 @@ const { QueryTypes, Transaction, } = require('sequelize')
 const { Op } = require('sequelize')
 const Usuario = db.Usuario
 const TransaccionBancaria = db.TransaccionBancaria
-const MatrizReferidos = db.MatrizReferidos
+const LogTransaccion = db.LogTransaccion
 const ConfiguracionSistema = db.ConfiguracionSistema
 const ComisionReferido = db.ComisionReferido
 const SaldoUsuario = db.SaldoUsuario
@@ -200,10 +200,15 @@ const subscribcion = async (data) => {
             transaction
         })
 
+        await LogTransaccion.create({
+            descripcion: `${usuario.nombres}, nuevo suscriptor registrado`,
+            estado: 1
+        }, { transaction })
+
         await transaction.commit()
 
         return ResponseHandler.success({ usuarioId: usuario.usuarioId, transaccionId: transaccion.transaccionId },
-                                       'Usuario suscrito exitosamente')
+            'Usuario suscrito exitosamente')
     } catch (error) {
         await transaction.rollback()
         throw error

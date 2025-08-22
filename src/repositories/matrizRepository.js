@@ -4,7 +4,7 @@ const { sequelize } = require("../models")
 const { QueryTypes, Transaction } = require('sequelize')
 const { Op } = require('sequelize')
 const Usuario = db.Usuario
-const TransaccionBancaria = db.TransaccionBancaria
+const LogTransaccion = db.LogTransaccion
 const MatrizReferidos = db.MatrizReferido
 const ConfiguracionSistema = db.ConfiguracionSistema
 const ComisionReferido = db.ComisionReferido
@@ -320,6 +320,11 @@ const agregarReferidosMatriz = async (data) => {
                 comisionGenerada: comision.montoComision
             })
         }
+
+        await LogTransaccion.create({
+            descripcion: `Nuevo registro de asociación  para ${referente.nombres}`,
+            estado: 1
+        }, { transaction })
 
         await transaction.commit()
 

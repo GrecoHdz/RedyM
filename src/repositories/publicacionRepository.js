@@ -10,6 +10,7 @@ const Usuario = db.Usuario
 const AdjuntoPublicacion = db.AdjuntoPublicacion
 const TipoPublicacion = db.TipoPublicacion
 const Publicacion = db.Publicacion
+const LogTransaccion = db.LogTransaccion
 
 // Función para subir un solo archivo a Cloudinary
 const uploadSingleFile = async (file) => {
@@ -58,7 +59,7 @@ const uploadSingleFile = async (file) => {
         const dataUri = `data:${file.mimetype};base64,${base64String}`;
 
         const result = await cloudinary.uploader.upload(dataUri, uploadOptions);
-        
+
         return {
             url: result.secure_url,
             publicId: result.public_id,
@@ -161,9 +162,9 @@ const createPublicacion = async (data) => {
         // Subir cada archivo y crear registro en AdjuntoPublicacion
         for (let i = 0; i < adjuntos.length; i++) {
             const archivo = adjuntos[i]
-            
+
             console.log(`Subiendo archivo ${i + 1}/${adjuntos.length}: ${archivo.originalname}`)
-            
+
             // Subir archivo a Cloudinary
             const archivoSubido = await uploadSingleFile(archivo)
             adjuntosSubidos.push(archivoSubido)
@@ -179,11 +180,16 @@ const createPublicacion = async (data) => {
             console.log(`Archivo ${i + 1} subido exitosamente: ${archivoSubido.url}`)
         }
 
+        await LogTransaccion.create({
+            descripcion: `${usuario.nombres}, a creado una nueva publicación`,
+            estado: 1
+        }, { transaction })
+
         // Si llegamos aquí, todo salió bien - confirmar transacción
         await transaction.commit()
 
         console.log('Publicación creada exitosamente')
-        
+
         // Retornar respuesta simple sin relaciones por ahora
         const publicacionResponse = {
             publicacionId: publicacion.publicacionId,
@@ -205,12 +211,12 @@ const createPublicacion = async (data) => {
 
     } catch (error) {
         console.error('Error en createPublicacion:', error)
-        
+
         // Solo hacer rollback si la transacción no ha sido commitada
         if (!transaction.finished) {
             await transaction.rollback()
         }
-        
+
         throw error
     }
 }
@@ -218,9 +224,9 @@ const createPublicacion = async (data) => {
 const getPublicacionById = async (publicacionId) => {
     try {
         const publicacion = await Publicacion.findOne({
-            where: { 
+            where: {
                 publicacionId: publicacionId,
-                estado: true 
+                estado: true
             }
         })
 
@@ -230,9 +236,9 @@ const getPublicacionById = async (publicacionId) => {
 
         // Obtener adjuntos por separado
         const adjuntos = await AdjuntoPublicacion.findAll({
-            where: { 
+            where: {
                 publicacionId: publicacionId,
-                estado: true 
+                estado: true
             },
             order: [['orden', 'ASC']]
         })
@@ -277,9 +283,9 @@ const getAllPublicaciones = async (limit = 20, offset = 0) => {
             publicaciones.rows.map(async (publicacion) => {
                 // Obtener adjuntos
                 const adjuntos = await AdjuntoPublicacion.findAll({
-                    where: { 
+                    where: {
                         publicacionId: publicacion.publicacionId,
-                        estado: true 
+                        estado: true
                     },
                     order: [['orden', 'ASC']]
                 })
@@ -322,10 +328,10 @@ const deletePublicacion = async (publicacionId, usuarioId) => {
     try {
         // Verificar que la publicación existe y pertenece al usuario
         const publicacion = await Publicacion.findOne({
-            where: { 
+            where: {
                 publicacionId: publicacionId,
                 usuarioId: usuarioId,
-                estado: true 
+                estado: true
             },
             transaction
         })
@@ -337,9 +343,9 @@ const deletePublicacion = async (publicacionId, usuarioId) => {
 
         // Obtener adjuntos por separado
         const adjuntos = await AdjuntoPublicacion.findAll({
-            where: { 
+            where: {
                 publicacionId: publicacionId,
-                estado: true 
+                estado: true
             },
             transaction
         })
@@ -367,20 +373,32 @@ const deletePublicacion = async (publicacionId, usuarioId) => {
         // Eliminar adjuntos de la base de datos (soft delete)
         await AdjuntoPublicacion.update(
             { estado: false },
-            { 
+            {
                 where: { publicacionId: publicacionId },
-                transaction 
+                transaction
             }
         )
 
         // Eliminar publicación (soft delete)
         await Publicacion.update(
             { estado: false },
-            { 
+            {
                 where: { publicacionId: publicacionId },
-                transaction 
+                transaction
             }
         )
+
+        const usuario = await Usuario.findOne({
+            where: {
+                usuarioId: usuarioId,
+            },
+            transaction
+        })
+
+        await LogTransaccion.create({
+            descripcion: `${usuario.nombres}, a eliminado una publicación`,
+            estado: 1
+        }, { transaction })
 
         await transaction.commit()
         return ResponseHandler.success(null, 'Publicación eliminada exitosamente')
