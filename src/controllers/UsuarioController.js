@@ -3,7 +3,7 @@ const Usuario = require("../models/usuariosModel");
 const Ciudad = require("../models/ciudadesModel");
 const Rol = require("../models/rolesModel");
 const { Op } = require("sequelize");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const saltRounds = 10;
 
 // OBTENER TODOS LOS USUARIOS (READ ALL)

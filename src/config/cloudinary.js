@@ -15,7 +15,7 @@ cloudinary.config({
 const profileStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'MiSeguro/usuarios/perfiles',
+    folder: 'RedyMercadeo/usuarios/perfiles',
     allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
     transformation: [{
       width: 800,
@@ -38,7 +38,7 @@ const profileStorage = new CloudinaryStorage({
 const packageStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'MiSeguro/paquetes',
+    folder: 'RedyMercadeo/paquetes',
     allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
     transformation: [{
       width: 1200,

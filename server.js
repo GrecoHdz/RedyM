@@ -7,6 +7,9 @@ const cors = require("cors");
 const app = express();
 
 //Rutas
+const usuarioRoutes = require("./src/routes/UsuarioRoute");
+const authRoutes = require("./src/routes/authRoute");
+const ciudadRoutes = require("./src/routes/CiudadRoute");
 
 
 // Configurar las asociaciones de los modelos
@@ -65,12 +68,11 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Importar Rutas 
-const authRoutes = require("./src/routes/authRoutes");
-const usuarioRoutes = require("./src/routes/UsuarioRoute");
-
+// Importar Rutas  
 app.use("/auth", authRoutes);
 app.use("/usuarios", usuarioRoutes);
+app.use("/ciudad", ciudadRoutes);
+
 // Iniciar servidor
 const PORT = process.env.PORT || 4000;
 const startServer = async () => {
