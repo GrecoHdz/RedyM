@@ -7,9 +7,7 @@ const cors = require("cors");
 const app = express();
 
 //Rutas
-const userRoutes = require("./src/routes/UsuarioRoute");
-const authRoutes = require("./src/routes/authRoute");
-const rolRoutes = require("./src/routes/RolRoute");
+
 
 // Configurar las asociaciones de los modelos
 const setupAssociations = require('./src/models');
@@ -68,9 +66,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Importar Rutas 
-app.use("/usuarios", userRoutes);
-app.use("/auth", authRoutes);
-app.use("/roles", rolRoutes);
+
 
 // Iniciar servidor
 const PORT = process.env.PORT || 4000;

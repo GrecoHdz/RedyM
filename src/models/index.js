@@ -1,71 +1,545 @@
-'use strict'
-
-const fs = require('fs')
-const path = require('path')
-const Sequelize = require('sequelize')
-const process = require('process')
-const basename = path.basename(__filename)
-const env = process.env.NODE_ENV || 'development'
-const config = require(__dirname + '/../config/config.js')[env]
-const db = {}
-
-let sequelize
-if (config.use_env_variable) {
-  sequelize = new Sequelize(process.env[config.use_env_variable], config)
-} else {
-  sequelize = new Sequelize(config.database, config.username, config.password, config)
-}
-
-sequelize.addHook('beforeDefine', (attributes, options) => {
-  if (!options.tableName && options.modelName) {
-    options.tableName = options.modelName.toLowerCase() + 's'
-  }
-})
-
-fs
-  .readdirSync(__dirname)
-  .filter(file => {
-    return (
-      file.indexOf('.') !== 0 &&
-      file !== basename &&
-      file.slice(-3) === '.js' &&
-      file.indexOf('.test.js') === -1
-    )
-  })
-  .forEach(file => {
-    const model = require(path.join(__dirname, file))(sequelize, Sequelize.DataTypes)
-    db[model.name] = model
-  })
-
-Object.keys(db).forEach(modelName => {
-  if (db[modelName].associate) {
-    db[modelName].associate(db)
-  }
-})
-
-db.sequelize = sequelize
-db.Sequelize = Sequelize
+// Importa todos los modelos
+const Usuario = require('./usuariosModel');
+const Rol = require('./rolesModel');
+const Servicio = require('./serviciosModel');
+const SolicitudServicio = require('./solicitudServicioModel');
+const Membresia = require('./membresiaModel');
+const PagoVisita = require('./pagoVisitaModel');
+const Ciudad = require('./ciudadesModel');
+const RefreshToken = require('./refreshtokenModel');
+const Cuenta = require('./cuentasModel');
+const Cotizacion = require('./cotizacionModel');
+const Movimiento = require('./movimientosModel');
+const Calificacion = require('./calificacionesModels');
+const CreditoUsuario = require('./creditoUsuariosModel');
+const Referido = require('./referidosModel');
+const Notificacion = require('./notificacionesModel');
+const NotificacionDestinatario = require('./notificacionesDestinatariosModel');
+const Config = require('./configModel');
+const TecnicoServicio = require('./tecnicosServiciosModel');
+const Factura = require('./facturaModel');
+const FacturaRelacion = require('./facturaRelacionModel');
+const FacturaCorrelativo = require('./facturaCorrelativoModel');
+const Paquete = require('./paquetesModel');
+const PaqueteUsuario = require('./paquetesUsuariosModel');
+const PagoPaquete = require('./pagoPaqueteModel');
+const ServicioCiudad = require('./serviciosCiudadesModel');
+const PaqueteCiudad = require('./paquetesCiudadesModel');
 
 
-// En tu archivo de modelos donde defines las asociaciones
-db.MatrizReferido.belongsTo(db.Usuario, {
-    foreignKey: 'referidoId',
-    as: 'referido'
-});
+// Función para configurar las asociaciones
+const setupAssociations = () => {
+  // Relación PaqueteUsuario - PagoPaquete
+  PaqueteUsuario.hasMany(PagoPaquete, {
+    foreignKey: 'id_paquete_usuario',
+    as: 'pagos',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
 
-db.MatrizReferido.belongsTo(db.Usuario, {
-    foreignKey: 'referenteId',
-    as: 'referente'
-});
+  PagoPaquete.belongsTo(PaqueteUsuario, {
+    foreignKey: 'id_paquete_usuario',
+    as: 'paqueteUsuario',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
 
-db.ComisionReferido.belongsTo(db.Usuario, {
-    foreignKey: 'beneficiarioId',
-    as: 'beneficiario'
-});
+  PagoPaquete.belongsTo(Usuario, {
+    foreignKey: 'id_usuario',
+    as: 'usuario',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
 
-db.ComisionReferido.belongsTo(db.Usuario, {
-    foreignKey: 'referidoId',
-    as: 'referido'
-});
+  Usuario.hasMany(PagoPaquete, {
+    foreignKey: 'id_usuario',
+    as: 'pagosPaquetes',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
 
-module.exports = db
+  // Relación Usuario - Rol
+  Usuario.belongsTo(Rol, {
+    foreignKey: 'id_rol',
+    as: 'rol'
+  });
+  Rol.hasMany(Usuario, {
+    foreignKey: 'id_rol',
+    as: 'usuarios'
+  });
+
+  // Relación Usuario - Ciudad
+  Usuario.belongsTo(Ciudad, {
+    foreignKey: 'id_ciudad',
+    as: 'ciudad'
+  });
+  Ciudad.hasMany(Usuario, {
+    foreignKey: 'id_ciudad',
+    as: 'usuarios'
+  });
+
+  // Relación Usuario - Solicitud de Servicio (como cliente)
+  Usuario.hasMany(SolicitudServicio, {
+    foreignKey: 'id_usuario',
+    as: 'solicitudesCliente',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Usuario - Solicitud de Servicio (como técnico)
+  Usuario.hasMany(SolicitudServicio, {
+    foreignKey: 'id_tecnico',
+    as: 'solicitudesTecnico',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación SolicitudServicio - Usuario (cliente)
+  SolicitudServicio.belongsTo(Usuario, {
+    foreignKey: 'id_usuario',
+    as: 'cliente',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación SolicitudServicio - Usuario (técnico)
+  SolicitudServicio.belongsTo(Usuario, {
+    foreignKey: 'id_tecnico',
+    as: 'tecnico',
+    onUpdate: 'CASCADE',
+    onDelete: 'SET NULL'
+  });
+
+  // Relación SolicitudServicio - Cotización
+  SolicitudServicio.hasOne(Cotizacion, {
+    foreignKey: 'id_solicitud',
+    as: 'cotizacion',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  Cotizacion.belongsTo(SolicitudServicio, {
+    foreignKey: 'id_solicitud',
+    as: 'solicitud',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  // Relación Servicio - SolicitudServicio
+  Servicio.hasMany(SolicitudServicio, {
+    foreignKey: 'id_servicio',
+    as: 'solicitudes',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  SolicitudServicio.belongsTo(Servicio, {
+    foreignKey: 'id_servicio',
+    as: 'servicio',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Ciudad - SolicitudServicio
+  Ciudad.hasMany(SolicitudServicio, {
+    foreignKey: 'id_ciudad',
+    as: 'solicitudes',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  SolicitudServicio.belongsTo(Ciudad, {
+    foreignKey: 'id_ciudad',
+    as: 'ciudad',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Usuario - RefreshToken
+  Usuario.hasMany(RefreshToken, {
+    foreignKey: 'usuario_id',
+    as: 'refreshTokens',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  RefreshToken.belongsTo(Usuario, {
+    foreignKey: 'usuario_id',
+    as: 'usuario',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  // Relación Usuario - Membresía
+  Usuario.hasMany(Membresia, {
+    foreignKey: 'id_usuario',
+    as: 'membresias',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  Membresia.belongsTo(Usuario, {
+    foreignKey: 'id_usuario',
+    as: 'usuario',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  // Relación Membresía - Cuenta
+  Membresia.belongsTo(Cuenta, {
+    foreignKey: 'id_cuenta',
+    as: 'cuenta',
+    onUpdate: 'CASCADE',
+    onDelete: 'SET NULL'
+  });
+
+  Cuenta.hasMany(Membresia, {
+    foreignKey: 'id_cuenta',
+    as: 'membresias',
+    onUpdate: 'CASCADE',
+    onDelete: 'SET NULL'
+  });
+
+  // Relación Usuario - Movimiento
+  Usuario.hasMany(Movimiento, {
+    foreignKey: 'id_usuario',
+    as: 'movimientos',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  Movimiento.belongsTo(Usuario, {
+    foreignKey: 'id_usuario',
+    as: 'usuario',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Cotización - Movimiento
+  Cotizacion.hasMany(Movimiento, {
+    foreignKey: 'id_cotizacion',
+    as: 'movimientos',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  Movimiento.belongsTo(Cotizacion, {
+    foreignKey: 'id_cotizacion',
+    as: 'cotizacion',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación PagoVisita - SolicitudServicio
+  PagoVisita.belongsTo(SolicitudServicio, {
+    foreignKey: 'id_solicitud',
+    as: 'solicitud',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  SolicitudServicio.hasOne(PagoVisita, {
+    foreignKey: 'id_solicitud',
+    as: 'pagoVisita',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación PagoVisita - Cuenta
+  PagoVisita.belongsTo(Cuenta, {
+    foreignKey: 'id_cuenta',
+    as: 'cuenta',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  Cuenta.hasMany(PagoVisita, {
+    foreignKey: 'id_cuenta',
+    as: 'pagosVisita',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación PagoVisita - Usuario
+  PagoVisita.belongsTo(Usuario, {
+    foreignKey: 'id_usuario',
+    as: 'usuario',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  Usuario.hasMany(PagoVisita, {
+    foreignKey: 'id_usuario',
+    as: 'pagosVisita',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Cotización - Cuenta
+  Cotizacion.belongsTo(Cuenta, {
+    foreignKey: 'id_cuenta',
+    as: 'cuenta',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  Cuenta.hasMany(Cotizacion, {
+    foreignKey: 'id_cuenta',
+    as: 'cotizaciones',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Calificación - SolicitudServicio
+  Calificacion.belongsTo(SolicitudServicio, {
+    foreignKey: 'id_solicitud',
+    as: 'calificacionsolicitud',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Calificación - Usuario calificador
+  Calificacion.belongsTo(Usuario, {
+    foreignKey: 'id_usuario_calificador',
+    as: 'usuarioCalificador',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Calificación - Usuario calificado
+  Calificacion.belongsTo(Usuario, {
+    foreignKey: 'id_usuario_calificado',
+    as: 'usuarioCalificado',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación SolicitudServicio - Calificación (1:1)
+  SolicitudServicio.hasOne(Calificacion, {
+    foreignKey: 'id_solicitud',
+    as: 'calificacion',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Credito - Usuario
+  CreditoUsuario.belongsTo(Usuario, {
+    foreignKey: 'id_usuario',
+    as: 'usuario',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Referido - Usuario
+  Referido.belongsTo(Usuario, {
+    foreignKey: 'id_referido_usuario',
+    as: 'usuario',
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  });
+
+  // Relación Notificación - NotificaciónDestinatario
+  Notificacion.hasMany(NotificacionDestinatario, {
+    foreignKey: "id_notificacion",
+    as: "destinatarios",
+  });
+  NotificacionDestinatario.belongsTo(Notificacion, {
+    foreignKey: "id_notificacion",
+  });
+
+  // Relación Usuario - NotificaciónDestinatario
+  Usuario.hasMany(NotificacionDestinatario, {
+    foreignKey: "id_usuario",
+    as: "notificacionesDestinatario"
+  });
+
+  NotificacionDestinatario.belongsTo(Usuario, {
+    foreignKey: "id_usuario",
+    as: "usuario"
+  });
+
+  // Relación Config - Usuario (para referidor predeterminado)
+  Config.belongsTo(Usuario, {
+    foreignKey: 'valor',  // This assumes 'valor' in Config stores the user ID
+    as: 'usuario',
+    constraints: false  // This allows the foreign key to reference a non-primary key
+  });
+
+  // Relaciones de TecnicoServicio
+  // Relación Técnico (Usuario) - TecnicoServicio
+  Usuario.hasMany(TecnicoServicio, {
+    foreignKey: 'id_tecnico',
+    as: 'serviciosAsignados',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  TecnicoServicio.belongsTo(Usuario, {
+    foreignKey: 'id_tecnico',
+    as: 'tecnico',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  // Relación Servicio - TecnicoServicio
+  Servicio.hasMany(TecnicoServicio, {
+    foreignKey: 'id_servicio',
+    as: 'tecnicosAsignados',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  TecnicoServicio.belongsTo(Servicio, {
+    foreignKey: 'id_servicio',
+    as: 'servicio',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  // Relaciones de Factura
+  // Relación Factura - FacturaRelacion (1:1)
+  Factura.hasOne(FacturaRelacion, {
+    foreignKey: 'id_factura',
+    as: 'relacion',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  FacturaRelacion.belongsTo(Factura, {
+    foreignKey: 'id_factura',
+    as: 'factura',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
+  // Relación FacturaRelacion - PagoVisita
+  FacturaRelacion.belongsTo(PagoVisita, {
+    foreignKey: 'id_pagovisita',
+    as: 'pagoVisita',
+    onUpdate: 'CASCADE',
+    onDelete: 'SET NULL'
+  });
+
+  // Relación FacturaRelacion - Cotización
+  FacturaRelacion.belongsTo(Cotizacion, {
+    foreignKey: 'id_cotizacion',
+    as: 'cotizacion',
+    onUpdate: 'CASCADE',
+    onDelete: 'SET NULL'
+  });
+
+  // Relación FacturaRelacion - Membresia
+  FacturaRelacion.belongsTo(Membresia, {
+    foreignKey: 'id_membresia',
+    as: 'membresia',
+    onUpdate: 'CASCADE',
+    onDelete: 'SET NULL'
+  });
+
+  Membresia.hasOne(FacturaRelacion, {
+    foreignKey: 'id_membresia',
+    as: 'facturaRelacion'
+  });
+
+  PagoVisita.hasOne(FacturaRelacion, {
+    foreignKey: 'id_pagovisita',
+    as: 'facturaRelacion'
+  });
+
+  Cotizacion.hasOne(FacturaRelacion, {
+    foreignKey: 'id_cotizacion',
+    as: 'facturaRelacion'
+  });
+
+  // Relación FacturaRelacion - PagoPaquete
+  FacturaRelacion.belongsTo(PagoPaquete, {
+    foreignKey: 'id_pago_paquete',
+    as: 'pagoPaquete',
+    onUpdate: 'CASCADE',
+    onDelete: 'SET NULL'
+  });
+
+  PagoPaquete.hasOne(FacturaRelacion, {
+    foreignKey: 'id_pago_paquete',
+    as: 'facturaRelacion'
+  });
+
+  // User and Package relationship (Many-to-Many through PaqueteUsuario)
+  Usuario.belongsToMany(Paquete, {
+    through: PaqueteUsuario,
+    foreignKey: 'id_usuario',
+    otherKey: 'id_paquete'
+  });
+
+  Paquete.belongsToMany(Usuario, {
+    through: PaqueteUsuario,
+    foreignKey: 'id_paquete',
+    otherKey: 'id_usuario'
+  });
+
+  PaqueteUsuario.belongsTo(Usuario, {
+    foreignKey: 'id_usuario'
+  });
+
+  PaqueteUsuario.belongsTo(Paquete, {
+    foreignKey: 'id_paquete'
+  });
+
+  Usuario.hasMany(PaqueteUsuario, {
+    foreignKey: 'id_usuario'
+  });
+
+  Paquete.hasMany(PaqueteUsuario, {
+    foreignKey: 'id_paquete'
+  });
+
+  PagoPaquete.belongsTo(Cuenta, {
+    foreignKey: 'id_cuenta',
+    as: 'cuenta'
+  });
+
+  // Relaciones Muchos a Muchos: Servicio - Ciudad
+  Servicio.belongsToMany(Ciudad, {
+    through: ServicioCiudad,
+    foreignKey: 'id_servicio',
+    otherKey: 'id_ciudad',
+    as: 'ciudades'
+  });
+
+  Ciudad.belongsToMany(Servicio, {
+    through: ServicioCiudad,
+    foreignKey: 'id_ciudad',
+    otherKey: 'id_servicio',
+    as: 'servicios'
+  });
+
+  Servicio.hasMany(ServicioCiudad, { foreignKey: 'id_servicio' });
+  ServicioCiudad.belongsTo(Servicio, { foreignKey: 'id_servicio' });
+  Ciudad.hasMany(ServicioCiudad, { foreignKey: 'id_ciudad' });
+  ServicioCiudad.belongsTo(Ciudad, { foreignKey: 'id_ciudad' });
+
+  // Relaciones Muchos a Muchos: Paquete - Ciudad
+  Paquete.belongsToMany(Ciudad, {
+    through: PaqueteCiudad,
+    foreignKey: 'id_paquete',
+    otherKey: 'id_ciudad',
+    as: 'ciudades'
+  });
+
+  Ciudad.belongsToMany(Paquete, {
+    through: PaqueteCiudad,
+    foreignKey: 'id_ciudad',
+    otherKey: 'id_paquete',
+    as: 'paquetes'
+  });
+
+  Paquete.hasMany(PaqueteCiudad, { foreignKey: 'id_paquete' });
+  PaqueteCiudad.belongsTo(Paquete, { foreignKey: 'id_paquete' });
+  Ciudad.hasMany(PaqueteCiudad, { foreignKey: 'id_ciudad' });
+  PaqueteCiudad.belongsTo(Ciudad, { foreignKey: 'id_ciudad' });
+
+  console.log('Asociaciones configuradas correctamente');
+};
+
+// Exporta la función de configuración
+module.exports = setupAssociations;
