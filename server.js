@@ -1,76 +1,90 @@
+//Importaciones
+const { connectDB } = require("./src/config/database");
+const cookieParser = require("cookie-parser");
 const express = require("express")
-const app = express()
-const cors = require("cors")
-const cookieParser = require('cookie-parser')
+const morgan = require("morgan");
+const cors = require("cors");
+const app = express();
 
-const {
-    query
-} = require('express-validator')
-require('dotenv').config()
+//Rutas
+const userRoutes = require("./src/routes/UsuarioRoute");
+const authRoutes = require("./src/routes/authRoute");
+const rolRoutes = require("./src/routes/RolRoute");
 
-const cloudinary = require('cloudinary').v2;
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-    secure: true,
+// Configurar las asociaciones de los modelos
+const setupAssociations = require('./src/models');
+setupAssociations();
+
+// Configuración de cookies
+const cookieConfig = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production', // En producción, solo enviar sobre HTTPS
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Para desarrollo local
+    partitioned: process.env.NODE_ENV === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+    path: '/',
+};
+//Middleware para configurar la configuración de cookies en todas las rutas
+app.use((req, res, next) => {
+    req.cookieConfig = cookieConfig;
+    next();
 });
 
-const PORT = process.env.PORT
-const whiteList = [process.env.ORIGIN]
-console.log("lista blanca:", whiteList)
+// Middlewares
+app.use(morgan("dev"));
+app.use(express.json());
+app.use(cookieParser());
+console.log("CORS origin:", process.env.FRONTEND_URL);
+// Configuración de CORS
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Permitir solicitudes sin origin (Postman, apps móviles)
+        if (!origin) return callback(null, true);
 
-app.use(
-    cors({
-        origin: function (origin, callback) {
-            console.log("😲😲😲 =>", origin)
-            if (!origin || whiteList.includes(origin)) {
-                console.log("Si entro aqui")
-                return callback(null, origin)
-            }
-            console.log("No entro ...")
-            return callback(
-                "Error de CORS origin: " + origin + " No autorizado!"
-            )
-        },
-        credentials: true,
-    })
-)
+        // Lista de orígenes permitidos
+        const allowedOrigins = [
+            'https://front-six-lemon.vercel.app',  // URL principal
+            'http://localhost:5173',
+            'http://localhost:3000',
+            process.env.FRONTEND_URL
+        ];
 
-app.use(express.json())
+        // Permitir todas las URLs de Vercel de tu proyecto
+        const isVercelPreview = origin && origin.includes('miseguros-projects-00c1e523.vercel.app');
 
-app.use(cookieParser())
-app.use(express.urlencoded({
-    extended: true
-}))
+        if (allowedOrigins.includes(origin) || isVercelPreview) {
+            callback(null, true);
+        } else {
+            console.log('❌ Origen bloqueado por CORS:', origin);
+            callback(new Error('No permitido por CORS'));
+        }
+    },
+    credentials: true,
+    optionsSuccessStatus: 200,
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+};
 
-const db = require("./src/models")
+app.use(cors(corsOptions));
 
-db.sequelize.authenticate()
-    .then(() => {
-        console.log('Conexión a Azure MySQL exitosa');
-    })
-    .catch(err => {
-        console.error('Error conectando a Azure MySQL:', err);
-    });
+// Importar Rutas 
+app.use("/usuarios", userRoutes);
+app.use("/auth", authRoutes);
+app.use("/roles", rolRoutes);
 
-db.sequelize.sync()
-    .then(() => {
-        console.log("Synced db.")
-    })
-    .catch((err) => {
-        console.log("Failed to sync db: " + err.message)
-    })
+// Iniciar servidor
+const PORT = process.env.PORT || 4000;
+const startServer = async () => {
+    try {
+        await connectDB();
 
-app.get('/', (req, res) => {
-    res.send("Hola")
-})
-const indexRouter = require('./src/routes/index')
-const errorHandlerMiddleware = require('./src/middlewares/errorHandlerMiddleware')
-const logErrorHandlerMiddleware = require('./src/middlewares/logErrorHandlerMiddleware')
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`🚀 Servidor corriendo en http://0.0.0.0:${PORT}`);
+        });
+    } catch (error) {
+        console.error('❌ Error al iniciar el servidor:', error);
+        process.exit(1);
+    }
+};
 
-app.use(indexRouter)
-app.use(logErrorHandlerMiddleware)
-app.use(errorHandlerMiddleware)
-
-app.listen(PORT, () => console.log('Listen: http://localhost:' + PORT))
+startServer();
