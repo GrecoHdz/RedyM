@@ -66,8 +66,11 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Importar Rutas 
+const authRoutes = require("./src/routes/authRoutes");
+const usuarioRoutes = require("./src/routes/UsuarioRoute");
 
-
+app.use("/auth", authRoutes);
+app.use("/usuarios", usuarioRoutes);
 // Iniciar servidor
 const PORT = process.env.PORT || 4000;
 const startServer = async () => {
