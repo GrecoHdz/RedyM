@@ -15,18 +15,11 @@ router.post('/login',
     login);
 
 // Ruta para refrescar el token de acceso
-router.post('/refresh-token',
-    [
-        body('refreshToken', 'El refresh token es requerido').exists()
-    ],
-    refreshToken);
+router.post('/refresh-token', refreshToken);
 
 // Ruta para cerrar sesión
 router.post('/logout',
     authMiddleware,
-    [
-        body('refreshToken', 'El refresh token es requerido').exists()
-    ],
     logout);
 
 // Ruta para obtener información del usuario actual

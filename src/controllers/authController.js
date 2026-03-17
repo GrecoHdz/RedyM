@@ -1,12 +1,17 @@
+// authController.js
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 const Usuario = require('../models/usuariosModel');
 const Rol = require('../models/rolesModel');
 const RefreshToken = require('../models/refreshtokenModel');
 const Ciudad = require('../models/ciudadesModel');
+
+// Configuración del transporte de correo
+const transporter = require('../config/mailer');
 
 // Generar un token de acceso
 const generateAccessToken = (user) => {
@@ -59,6 +64,17 @@ const clearAllAuthCookies = (res) => {
 
 // LOGIN
 const login = async (req, res) => {
+    const { validationResult } = require('express-validator');
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Error de validación',
+            errors: errors.array()
+        });
+    }
+
     const { identidad, password } = req.body;
 
     try {
@@ -155,10 +171,21 @@ const login = async (req, res) => {
 
 // REFRESH TOKEN
 const refreshToken = async (req, res) => {
+    console.log('🔄 [authController] Refresh token attempt:', {
+        hasRefreshToken: !!req.cookies.refreshToken,
+        hasToken: !!req.cookies.token,
+        headers: req.headers
+    });
+
     const t = await sequelize.transaction();
     try {
         const refreshToken = req.cookies.refreshToken;
         const accessToken = req.cookies.token || req.headers.authorization?.split(' ')[1];
+
+        console.log('🔍 [authController] Extracted info:', {
+            refreshTokenValue: refreshToken ? (refreshToken.substring(0, 5) + '...') : 'null',
+            accessTokenPresent: !!accessToken
+        });
 
         // Si no hay refresh token pero hay access token, intentar regenerar el refresh token
         if (!refreshToken && accessToken) {
@@ -263,6 +290,7 @@ const refreshToken = async (req, res) => {
         });
 
         if (!storedToken) {
+            console.warn('❌ [authController] RefreshToken not found in DB:', { refreshToken: refreshToken ? (refreshToken.substring(0, 5) + '...') : 'null' });
             clearAllAuthCookies(res);
             await t.rollback();
             return res.status(403).json({
@@ -273,6 +301,7 @@ const refreshToken = async (req, res) => {
 
         // Verificar expiración del refresh token
         if (new Date() > storedToken.expires_at) {
+            console.warn('❌ [authController] RefreshToken expired:', { expiresAt: storedToken.expires_at });
             await storedToken.destroy({ transaction: t });
             clearAllAuthCookies(res);
             await t.rollback();
@@ -285,9 +314,20 @@ const refreshToken = async (req, res) => {
         const user = storedToken.usuario;
         const newAccessToken = generateAccessToken(user);
 
-        // Destruir el refresh token antiguo y crear uno nuevo
-        await storedToken.destroy({ transaction: t });
+        // --- SISTEMA DE GRACIA PARA ROTACIÓN ---
+        // En lugar de borrar el token YA, lo dejamos vivir 30 segundos más
+        // para absorber peticiones paralelas que vengan en camino.
+        const gracePeriod = new Date();
+        gracePeriod.setSeconds(gracePeriod.getSeconds() + 30);
+
+        await storedToken.update({
+            expires_at: gracePeriod,
+            // Opcional: podrías marcarlo como 'reemplazado' si tuvieras esa columna
+        }, { transaction: t });
+
         const newRefreshToken = await generateRefreshToken(user, t);
+        console.log('🔄 [authController] Grace period applied to old token. New token generated.');
+        // ----------------------------------------
 
         const userData = user.get({ plain: true });
         delete userData.password_hash;
@@ -433,14 +473,14 @@ const forgotPassword = async (req, res) => {
         const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
         const mailOptions = {
-            from: `"RedYMercadeo" <${process.env.EMAIL_USER}>`,
+            from: `"MiSeguro" <${process.env.EMAIL_USER}>`,
             to: user.email,
-            subject: 'Restablece tu contraseña de RedYMercadeo',
+            subject: 'Restablece tu contraseña de MiSeguro',
             html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #10B981;">Restablece tu contraseña</h2>
           <p>Hola ${user.nombre},</p>
-          <p>Hemos recibido una solicitud para restablecer la contraseña de tu cuenta de RedYMercadeo.</p>
+          <p>Hemos recibido una solicitud para restablecer la contraseña de tu cuenta de MiSeguro.</p>
           <p>Por favor, haz clic en el siguiente enlace para crear una nueva contraseña:</p>
           <p>
             <a href="${resetUrl}" 
@@ -459,12 +499,12 @@ const forgotPassword = async (req, res) => {
       `
         };
 
-        const transporter = require('../config/mailer');
         await transporter.sendMail(mailOptions);
 
         res.status(200).json({
             success: true,
-            message: 'Se ha enviado un enlace de restablecimiento a tu correo electrónico'
+            message: 'Se ha enviado un enlace de restablecimiento a tu correo electrónico',
+            resetToken: process.env.NODE_ENV === 'development' ? resetToken : undefined
         });
 
     } catch (error) {

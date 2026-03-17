@@ -10,6 +10,8 @@ const app = express();
 const usuarioRoutes = require("./src/routes/UsuarioRoute");
 const authRoutes = require("./src/routes/authRoute");
 const ciudadRoutes = require("./src/routes/CiudadRoute");
+const membresiaRoutes = require("./src/routes/MembresiaRoute");
+const membresiaBeneficiosRoutes = require("./src/routes/MembresiBeneficiosRoute");
 
 
 // Configurar las asociaciones de los modelos
@@ -72,6 +74,8 @@ app.use(cors(corsOptions));
 app.use("/auth", authRoutes);
 app.use("/usuarios", usuarioRoutes);
 app.use("/ciudad", ciudadRoutes);
+app.use("/membresia", membresiaRoutes);
+app.use("/membresiabeneficios", membresiaBeneficiosRoutes);
 
 // Iniciar servidor
 const PORT = process.env.PORT || 4000;
