@@ -12,6 +12,8 @@ const authRoutes = require("./src/routes/authRoute");
 const ciudadRoutes = require("./src/routes/CiudadRoute");
 const membresiaRoutes = require("./src/routes/MembresiaRoute");
 const membresiaBeneficiosRoutes = require("./src/routes/MembresiBeneficiosRoute");
+const notificacionesRoutes = require("./src/routes/NotificacionesRoute");
+
 
 
 // Configurar las asociaciones de los modelos
@@ -49,6 +51,7 @@ const corsOptions = {
             'https://front-six-lemon.vercel.app',  // URL principal
             'http://localhost:5173',
             'http://localhost:3000',
+            'http://127.0.0.1:3000',
             process.env.FRONTEND_URL
         ];
 
@@ -76,6 +79,8 @@ app.use("/usuarios", usuarioRoutes);
 app.use("/ciudad", ciudadRoutes);
 app.use("/membresia", membresiaRoutes);
 app.use("/membresiabeneficios", membresiaBeneficiosRoutes);
+app.use("/notificaciones", notificacionesRoutes);
+
 
 // Iniciar servidor
 const PORT = process.env.PORT || 4000;
