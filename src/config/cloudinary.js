@@ -81,5 +81,29 @@ exports.uploadPackage = multer({
   }
 });
 
+// Configuración para identidad
+const identityStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'RedyMercadeo/usuarios/identidad',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    quality: 'auto:best',
+    fetch_format: 'auto',
+    secure: true
+  }
+});
+
+// Middleware para subir imágenes de identidad
+exports.uploadIdentity = multer({
+  storage: identityStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      return cb(new Error('Solo se permiten imágenes'), false);
+    }
+    cb(null, true);
+  }
+});
+
 // Exportar la instancia de cloudinary para operaciones directas
 exports.cloudinary = cloudinary;
