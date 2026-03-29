@@ -121,7 +121,7 @@ const crearUsuario = async (req, res) => {
 const actualizarUsuario = async (req, res) => {
     try {
         const { id } = req.params;
-        const { nombre, email, telefono, identidad, id_ciudad, estado, id_rol, password } = req.body;
+        const { nombre, email, telefono, identidad, id_ciudad, estado, id_rol, password, verificado } = req.body;
 
         const usuario = await Usuario.findByPk(id);
         if (!usuario) {
@@ -133,6 +133,7 @@ const actualizarUsuario = async (req, res) => {
         if (id_ciudad) updates.id_ciudad = id_ciudad;
         if (estado) updates.estado = estado;
         if (id_rol) updates.id_rol = id_rol;
+        if (verificado !== undefined) updates.verificado = verificado;
 
         // Verificar si los datos únicos ya están en uso por OTRO usuario
         const uniqueChecks = [];
@@ -306,7 +307,8 @@ const actualizarFotoIdentidad = async (req, res) => {
 
         await usuario.update({
             identidad_url: req.file.path,
-            identidad_public_id: req.file.filename
+            identidad_public_id: req.file.filename,
+            verificado: false
         });
 
         res.status(200).json({
@@ -314,7 +316,8 @@ const actualizarFotoIdentidad = async (req, res) => {
             message: "Identidad actualizada",
             data: {
                 identidad_url: usuario.identidad_url,
-                identidad_public_id: usuario.identidad_public_id
+                identidad_public_id: usuario.identidad_public_id,
+                verificado: usuario.verificado
             }
         });
     } catch (error) {
@@ -336,7 +339,8 @@ const eliminarFotoIdentidad = async (req, res) => {
 
         await usuario.update({
             identidad_url: null,
-            identidad_public_id: null
+            identidad_public_id: null,
+            verificado: false
         });
 
         res.status(200).json({ success: true, message: "Identidad eliminada" });
