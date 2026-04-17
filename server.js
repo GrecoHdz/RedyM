@@ -15,6 +15,9 @@ const membresiaBeneficiosRoutes = require("./src/routes/MembresiBeneficiosRoute"
 const notificacionesRoutes = require("./src/routes/NotificacionesRoute");
 const cuentasRoutes = require("./src/routes/CuentasRoute");
 const publicacionRoutes = require("./src/routes/PublicacionRoute");
+const interaccionRoutes = require("./src/routes/InteraccionRoute");
+const creditoRoutes = require("./src/routes/CreditoRoute");
+const configRoutes = require("./src/routes/ConfigRoute");
 
 
 
@@ -84,6 +87,9 @@ app.use("/membresiabeneficios", membresiaBeneficiosRoutes);
 app.use("/notificaciones", notificacionesRoutes);
 app.use("/cuentas", cuentasRoutes);
 app.use("/publicaciones", publicacionRoutes);
+app.use("/interacciones", interaccionRoutes);
+app.use("/credito", creditoRoutes);
+app.use("/config", configRoutes);
 
 // Iniciar servidor
 const PORT = process.env.PORT || 4000;

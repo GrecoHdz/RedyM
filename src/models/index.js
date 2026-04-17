@@ -10,6 +10,8 @@ const Config = require('./configModel');
 const SuscripcionNotificacion = require('./suscripcionesNotificacionesModel');
 
 const Publicacion = require('./publicacionesModel');
+const Interaccion = require('./InteraccionModel');
+const CreditoUsuario = require("./creditoUsuariosModel");
 
 // Función para configurar las asociaciones
 const setupAssociations = () => {
@@ -111,6 +113,31 @@ const setupAssociations = () => {
     onUpdate: 'CASCADE',
     onDelete: 'CASCADE'
   });
+
+  // Relación Publicación - Interacción
+  Publicacion.hasMany(Interaccion, {
+    foreignKey: 'id_publicacion',
+    as: 'interacciones',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+  Interaccion.belongsTo(Publicacion, {
+    foreignKey: 'id_publicacion',
+    as: 'publicacion'
+  });
+
+  // Relación Usuario - Interacción
+  Usuario.hasMany(Interaccion, {
+    foreignKey: 'id_usuario',
+    as: 'interacciones',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+  Interaccion.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
+
+  // Relaciones de CreditoUsuario
+  Usuario.hasOne(CreditoUsuario, { foreignKey: 'id_usuario', as: 'credito' });
+  CreditoUsuario.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
 
   console.log('Asociaciones de RedYMercadeo configuradas correctamente');
 };

@@ -1,0 +1,46 @@
+const { DataTypes } = require("sequelize");
+const { sequelize } = require("../config/database");
+
+const CreditoUsuario = sequelize.define("CreditoUsuario", {
+    id_credito_usuario: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    id_usuario: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        unique: true,
+        references: {
+            model: 'usuario',
+            key: 'id_usuario'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+    },
+    monto_credito: {
+        type: DataTypes.DECIMAL(10, 2), // 10 dígitos en total, 2 decimales
+        allowNull: false
+    },
+    fecha: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        defaultValue: DataTypes.NOW
+    }
+}, {
+    timestamps: false,
+    tableName: "credito",
+    indexes: [
+        {
+            name: 'idx_credito_usuario',
+            fields: ['id_usuario']
+        },
+        {
+            name: 'idx_credito_fecha',
+            fields: ['fecha']
+        }
+    ]
+
+});
+
+module.exports = CreditoUsuario;

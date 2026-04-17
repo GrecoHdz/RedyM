@@ -1,5 +1,7 @@
+const { Op } = require("sequelize");
 const Publicacion = require("../models/publicacionesModel");
 const Usuario = require("../models/usuariosModel");
+const Interaccion = require("../models/InteraccionModel");
 const { cloudinary } = require("../config/cloudinary");
 
 const crearPublicacion = async (req, res) => {
@@ -55,17 +57,39 @@ const crearPublicacion = async (req, res) => {
 
 const obtenerPublicaciones = async (req, res) => {
     try {
+        const { uid } = req.query;
+        
+        const whereCondition = { estado: 'activa' };
+        if (uid) {
+            whereCondition.id_usuario = { [Op.ne]: uid };
+        }
+        
         const publicaciones = await Publicacion.findAll({
-            where: { estado: 'activa' },
+            where: whereCondition,
             include: [{
                 model: Usuario,
                 as: 'usuario',
                 attributes: ['id_usuario', 'nombre', 'imagen_url', 'verificado', 'telefono']
+            }, {
+                model: Interaccion,
+                as: 'interacciones',
+                where: uid ? { id_usuario: uid } : { id_usuario: -1 },
+                required: false
             }],
             order: [['fecha', 'DESC']]
         });
 
-        res.json({ success: true, data: publicaciones });
+        // Mapear para incluir estados de interacción del usuario actual
+        const data = publicaciones.map(p => {
+            const pub = p.toJSON();
+            pub.liked = pub.interacciones?.some(i => i.tipo === 'like') || false;
+            pub.answered = pub.interacciones?.some(i => i.tipo === 'poll') || false;
+            pub.videoCompleted = pub.interacciones?.some(i => i.tipo === 'video_view') || false;
+            delete pub.interacciones;
+            return pub;
+        });
+
+        res.json({ success: true, data });
     } catch (error) {
         console.error("Error al obtener publicaciones:", error);
         res.status(500).json({ success: false, message: "Error al obtener feed" });
