@@ -9,8 +9,24 @@ const NotificacionDestinatario = require('./notificacionesDestinatariosModel');
 const Config = require('./configModel');
 const SuscripcionNotificacion = require('./suscripcionesNotificacionesModel');
 
+const Publicacion = require('./publicacionesModel');
+
 // Función para configurar las asociaciones
 const setupAssociations = () => {
+  // Relación Usuario - Publicación
+  Usuario.hasMany(Publicacion, {
+    foreignKey: 'id_usuario',
+    as: 'publicaciones',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+  Publicacion.belongsTo(Usuario, {
+    foreignKey: 'id_usuario',
+    as: 'usuario',
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
+  });
+
   // Relación Usuario - Rol
   Usuario.belongsTo(Rol, {
     foreignKey: 'id_rol',

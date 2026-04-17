@@ -105,5 +105,31 @@ exports.uploadIdentity = multer({
   }
 });
 
+// Configuración para publicaciones (soporta imágenes y videos)
+const postStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'RedyMercadeo/publicaciones',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'avi'],
+    quality: 'auto:best',
+    fetch_format: 'auto',
+    secure: true,
+    resource_type: 'auto' // Esto permite subir tanto imágenes como videos
+  }
+});
+
+// Middleware para subir archivos de publicaciones
+exports.uploadPost = multer({
+  storage: postStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // Límite de 10MB según requerimiento
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+        cb(null, true);
+    } else {
+        cb(new Error('Solo se permiten imágenes y videos'), false);
+    }
+  }
+});
+
 // Exportar la instancia de cloudinary para operaciones directas
 exports.cloudinary = cloudinary;

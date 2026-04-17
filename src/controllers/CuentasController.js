@@ -1,0 +1,99 @@
+const Cuenta = require("../models/cuentasModel");
+
+//Obtener todas las cuentas
+const obtenertodaslasCuentas = async (req, res) => {
+    try {
+        const cuentas = await Cuenta.findAll({
+            attributes: ['id_cuenta', 'banco', 'beneficiario', 'num_cuenta', 'tipo', 'activo']
+        });
+        res.json(cuentas);
+    } catch (error) {
+        console.error("Error al obtener cuentas activas:", error);
+        res.status(500).json({
+            error: "Error al obtener cuentas activas",
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+//Obtener todas las cuentas activas
+const obtenerCuentas = async (req, res) => {
+    try {
+        const cuentas = await Cuenta.findAll({
+            attributes: ['id_cuenta', 'banco', 'beneficiario', 'num_cuenta', 'tipo'],
+            where: { activo: 1 },
+        });
+        res.json(cuentas);
+    } catch (error) {
+        console.error("Error al obtener cuentas activas:", error);
+        res.status(500).json({
+            error: "Error al obtener cuentas activas",
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+//Obtener cuenta por id
+const obtenerCuentaPorId = async (req, res) => {
+    try {
+        const cuenta = await Cuenta.findOne({ where: { id_cuenta: req.params.id } });
+        res.json(cuenta);
+    } catch (error) {
+        console.error("Error al obtener cuenta por id:", error);
+        res.status(500).json({
+            error: "Error al obtener cuenta por id",
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+//Crear cuenta
+const crearCuenta = async (req, res) => {
+    try {
+        const cuenta = await Cuenta.create(req.body);
+        res.json(cuenta);
+    } catch (error) {
+        console.error("Error al crear cuenta:", error);
+        res.status(500).json({
+            error: "Error al crear cuenta",
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+//Actualizar cuenta
+const actualizarCuenta = async (req, res) => {
+    try {
+        const cuenta = await Cuenta.update(req.body, { where: { id_cuenta: req.params.id } });
+        res.json(cuenta);
+    } catch (error) {
+        console.error("Error al actualizar cuenta:", error);
+        res.status(500).json({
+            error: "Error al actualizar cuenta",
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+//Eliminar cuenta
+const eliminarCuenta = async (req, res) => {
+    try {
+        const cuenta = await Cuenta.destroy({ where: { id_cuenta: req.params.id } });
+        res.json(cuenta);
+    } catch (error) {
+        console.error("Error al eliminar cuenta:", error);
+        res.status(500).json({
+            error: "Error al eliminar cuenta",
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+module.exports = {
+    obtenertodaslasCuentas,
+    obtenerCuentas,
+    obtenerCuentaPorId,
+    crearCuenta,
+    actualizarCuenta,
+    eliminarCuenta
+};
