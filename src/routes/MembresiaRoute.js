@@ -11,7 +11,8 @@ const {
   crearMembresia,
   actualizarMembresia,
   eliminarMembresia,
-  obtenerProgresoMembresia
+  obtenerProgresoMembresia,
+  aprobarMembresia
 } = require("../controllers/MembresiaController");
 
 // Middleware de autenticación
@@ -66,6 +67,15 @@ router.post("/",
   ],
   validarErrores,
   crearMembresia
+);
+
+// Aprobar membrecía (solo administradores)
+router.post("/aprobar/:id",
+  [
+    param("id").isInt().withMessage("El ID debe ser un número entero")
+  ],
+  validarErrores,
+  aprobarMembresia
 );
 
 // Actualizar membresia (solo administradores)

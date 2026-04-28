@@ -63,17 +63,20 @@ const obtenerUsuarioPorId = async (req, res) => {
 
 // CREAR USUARIO (CREATE)
 const crearUsuario = async (req, res) => {
-    const { nombre, identidad, email, telefono, password, id_ciudad, es_tecnico } = req.body;
+    const { nombre, identidad, email, telefono, password, id_ciudad, es_tecnico, id_patrocinador } = req.body;
+    const t = await sequelize.transaction();
 
     try {
         // Verificar si ya existe
         const existe = await Usuario.findOne({
             where: {
                 [Op.or]: [{ email }, { identidad }, { telefono }]
-            }
+            },
+            transaction: t
         });
 
         if (existe) {
+            await t.rollback();
             return res.status(400).json({
                 success: false,
                 message: "Email, Identidad o Teléfono ya están registrados"
@@ -82,10 +85,11 @@ const crearUsuario = async (req, res) => {
 
         // Obtener Rol
         const nombreRol = es_tecnico ? 'tecnico' : 'usuario';
-        const rol = await Rol.findOne({ where: { nombre_rol: nombreRol } });
+        const rol = await Rol.findOne({ where: { nombre_rol: nombreRol }, transaction: t });
 
         if (!rol) {
-            return res.status(500).json({ success: false, message: `Rol '${nombreRol}' no encontrado en la base de datos` });
+            await t.rollback();
+            return res.status(500).json({ success: false, message: `Rol '${nombreRol}' no encontrado` });
         }
 
         // Hashear Password
@@ -101,7 +105,26 @@ const crearUsuario = async (req, res) => {
             id_rol: rol.id_rol,
             password_hash: hashedPassword,
             estado: es_tecnico ? 'deshabilitado' : 'activo'
-        });
+        }, { transaction: t });
+
+        // Crear registro de crédito inicial
+        const CreditoUsuario = require("../models/creditoUsuariosModel");
+        await CreditoUsuario.create({
+            id_usuario: nuevoUsuario.id_usuario,
+            monto_credito: 0.00
+        }, { transaction: t });
+
+        // Si hay patrocinador, registrar en la red (Nivel 0 - Pendiente de Pago)
+        if (!es_tecnico) {
+            const RedNiveles = require("../models/redNivelesModel");
+            await RedNiveles.create({
+                id_usuario: nuevoUsuario.id_usuario,
+                id_patrocinador: id_patrocinador || 1, // 1 = Empresa si no hay patrocinador
+                nivel_actual: 0
+            }, { transaction: t });
+        }
+
+        await t.commit();
 
         const data = nuevoUsuario.get({ plain: true });
         delete data.password_hash;
@@ -112,6 +135,7 @@ const crearUsuario = async (req, res) => {
             data: data
         });
     } catch (error) {
+        if (t) await t.rollback();
         console.error("Error al crear usuario:", error);
         res.status(500).json({ success: false, message: "Error al crear usuario", error: error.message });
     }

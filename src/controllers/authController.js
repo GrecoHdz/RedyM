@@ -148,6 +148,8 @@ const login = async (req, res) => {
             res.status(200).json({
                 success: true,
                 token: accessToken,
+                // Devolver refresh token en el body para que la PWA lo almacene en localStorage
+                refreshToken: refreshToken,
                 user: userForCookie,
             });
         } catch (error) {
@@ -171,21 +173,16 @@ const login = async (req, res) => {
 
 // REFRESH TOKEN
 const refreshToken = async (req, res) => {
-    console.log('🔄 [authController] Refresh token attempt:', {
-        hasRefreshToken: !!req.cookies.refreshToken,
-        hasToken: !!req.cookies.token,
-        headers: req.headers
-    });
-
     const t = await sequelize.transaction();
     try {
-        const refreshToken = req.cookies.refreshToken;
+        // Aceptar refresh token desde cookie (web) o header X-Refresh-Token (PWA standalone)
+        const refreshToken = req.cookies.refreshToken || req.headers['x-refresh-token'];
         const accessToken = req.cookies.token || req.headers.authorization?.split(' ')[1];
+        const isPWA = !!req.headers['x-refresh-token'] && !req.cookies.refreshToken;
 
-        console.log('🔍 [authController] Extracted info:', {
-            refreshTokenValue: refreshToken ? (refreshToken.substring(0, 5) + '...') : 'null',
-            accessTokenPresent: !!accessToken
-        });
+        console.log('🔄 [AuthBack] Intento de refresh-token');
+        console.log('📦 [AuthBack] Cookies presentes:', req.cookies ? Object.keys(req.cookies) : 'Ninguna');
+        if (isPWA) console.log('📱 [AuthBack] Modo PWA: refresh token recibido por header');
 
         // Si no hay refresh token pero hay access token, intentar regenerar el refresh token
         if (!refreshToken && accessToken) {
@@ -273,6 +270,8 @@ const refreshToken = async (req, res) => {
             });
         }
 
+        console.log('🔍 [AuthBack] RefreshToken recibido:', refreshToken ? (refreshToken.substring(0, 5) + '...') : 'null');
+
         const storedToken = await RefreshToken.findOne({
             where: { token: refreshToken },
             include: [
@@ -314,20 +313,9 @@ const refreshToken = async (req, res) => {
         const user = storedToken.usuario;
         const newAccessToken = generateAccessToken(user);
 
-        // --- SISTEMA DE GRACIA PARA ROTACIÓN ---
-        // En lugar de borrar el token YA, lo dejamos vivir 30 segundos más
-        // para absorber peticiones paralelas que vengan en camino.
-        const gracePeriod = new Date();
-        gracePeriod.setSeconds(gracePeriod.getSeconds() + 30);
-
-        await storedToken.update({
-            expires_at: gracePeriod,
-            // Opcional: podrías marcarlo como 'reemplazado' si tuvieras esa columna
-        }, { transaction: t });
-
+        // Destruir el refresh token antiguo y crear uno nuevo (rotación limpia)
+        await storedToken.destroy({ transaction: t });
         const newRefreshToken = await generateRefreshToken(user, t);
-        console.log('🔄 [authController] Grace period applied to old token. New token generated.');
-        // ----------------------------------------
 
         const userData = user.get({ plain: true });
         delete userData.password_hash;
@@ -377,6 +365,8 @@ const refreshToken = async (req, res) => {
             success: true,
             message: 'Token actualizado correctamente',
             token: newAccessToken,
+            // Devolver el nuevo refresh token en el body para que la PWA lo guarde en localStorage
+            refreshToken: newRefreshToken,
             user: userForCookie,
         });
     } catch (error) {
@@ -395,7 +385,7 @@ const refreshToken = async (req, res) => {
 
 // LOGOUT
 const logout = async (req, res) => {
-    const refreshToken = req.cookies.refreshToken;
+    const refreshToken = req.cookies.refreshToken || req.headers['x-refresh-token'];
     if (refreshToken) {
         try {
             await RefreshToken.destroy({ where: { token: refreshToken } });

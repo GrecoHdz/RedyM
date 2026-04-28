@@ -1,31 +1,121 @@
 const Config = require("../models/configModel");
+const Usuario = require("../models/usuariosModel");
+const { Op } = require('sequelize');
 
-const obtenerConfigPublicaciones = async (req, res) => {
+/**
+ * Obtener todas las configuraciones en formato de lista
+ */
+const obtenerConfig = async (req, res) => {
     try {
+        const config = await Config.findAll();
+        res.json({ success: true, data: config });
+    } catch (error) {
+        console.error("Error al obtener configuraciones:", error);
+        res.status(500).json({ 
+            success: false,
+            error: "Error al obtener configuraciones",
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+/**
+ * Obtener múltiples configuraciones por tipos en un solo objeto (Ideal para el Frontend)
+ * Ejemplo: /config/multi?tipos=valor_membresia,nivel2_costo,valor_like
+ */
+const obtenerMultiplesConfigs = async (req, res) => {
+    try {
+        const { tipos } = req.query;
+        if (!tipos) {
+            return res.status(400).json({ success: false, error: "Debe proporcionar los tipos de configuración" });
+        }
+
+        const listaTipos = tipos.split(',');
         const configs = await Config.findAll({
-            where: {
-                tipo_config: ['valor_like', 'valor_video', 'valor_encuesta']
-            }
+            where: { tipo_config: { [Op.in]: listaTipos } }
         });
 
-        // Convertir a un objeto plano para el frontend
         const data = {};
         configs.forEach(c => {
             data[c.tipo_config] = c.valor;
         });
 
-        // Valores por defecto si no existen
-        if (!data.valor_like) data.valor_like = "0.10";
-        if (!data.valor_video) data.valor_video = "1.50";
-        if (!data.valor_encuesta) data.valor_encuesta = "2.50";
-
         res.json({ success: true, data });
     } catch (error) {
-        console.error("Error al obtener config:", error);
-        res.status(500).json({ success: false, message: "Error al obtener configuración" });
+        console.error("Error en obtenerMultiplesConfigs:", error);
+        res.status(500).json({ success: false, error: "Error al obtener configuraciones múltiples" });
+    }
+};
+
+/**
+ * Obtener valor de una configuración específica
+ */
+const obtenerValorConfig = async (req, res) => {
+    try {
+        const { tipo_config } = req.params;
+        
+        // Caso especial para el referidor predeterminado que necesita el JOIN con Usuario
+        if (tipo_config === 'referidor_predeterminado') {
+            const config = await Config.findOne({
+                where: { tipo_config },
+                include: [{
+                    model: Usuario,
+                    as: 'referidorPredeterminado', // Nombre de la asociación en models/index.js
+                    attributes: ['id_usuario', 'nombre', 'email']
+                }]
+            });
+            return res.json({ success: true, data: config });
+        }
+        
+        const config = await Config.findOne({ where: { tipo_config } });
+        res.json({ success: true, data: config });
+    } catch (error) {
+        console.error("Error al obtener valor de configuracion:", error);
+        res.status(500).json({ success: false, error: "Error al obtener valor de configuracion" });
+    }
+};
+
+/**
+ * Crear o Actualizar configuración
+ */
+const guardarConfig = async (req, res) => {
+    try {
+        const { tipo_config, valor } = req.body;
+        
+        const [config, created] = await Config.findOrCreate({
+            where: { tipo_config },
+            defaults: { valor }
+        });
+
+        if (!created) {
+            await config.update({ valor });
+        }
+
+        res.json({ success: true, data: config, action: created ? 'created' : 'updated' });
+    } catch (error) {
+        console.error("Error al guardar configuracion:", error);
+        res.status(500).json({ success: false, error: "Error al procesar configuracion" });
+    }
+};
+
+/**
+ * Eliminar configuración
+ */
+const eliminarConfig = async (req, res) => {
+    try {
+        const { id } = req.params;
+        await Config.destroy({ where: { id_config: id } });
+        res.json({ success: true, message: "Configuración eliminada correctamente" });
+    } catch (error) {
+        console.error("Error al eliminar configuracion:", error);
+        res.status(500).json({ success: false, error: "Error al eliminar configuracion" });
     }
 };
 
 module.exports = {
-    obtenerConfigPublicaciones
+    obtenerConfig,
+    obtenerMultiplesConfigs,
+    obtenerValorConfig,
+    guardarConfig,
+    eliminarConfig
 };

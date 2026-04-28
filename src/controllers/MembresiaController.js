@@ -4,6 +4,10 @@ const MembresiaBeneficio = require("../models/membresiaBeneficiosModel");
 const Config = require("../models/configModel");
 const Usuario = require("../models/usuariosModel");
 const Cuenta = require("../models/cuentasModel");
+const RedNiveles = require("../models/redNivelesModel");
+const CreditoUsuario = require("../models/creditoUsuariosModel");
+const { encontrarPosicionSiguiente } = require("./redNivelesController");
+const { sequelize } = require("../config/database");
 
 // Obtener todas las membresias con información de usuario y cuenta
 const obtenerMembresias = async (req, res) => {
@@ -77,17 +81,6 @@ const obtenerMembresias = async (req, res) => {
                         model: Cuenta,
                         as: 'cuenta',
                         attributes: ['banco', 'beneficiario', 'num_cuenta', 'tipo']
-                    },
-                    {
-                        model: require('../models/facturaRelacionModel'),
-                        as: 'facturaRelacion',
-                        include: [
-                            {
-                                model: require('../models/facturaModel'),
-                                as: 'factura',
-                                attributes: ['id_factura', 'numero_factura_correlativo', 'estado']
-                            }
-                        ]
                     }
                 ],
                 order: [['fecha', 'DESC']],
@@ -181,17 +174,6 @@ const obtenerMembresiaPorId = async (req, res) => {
                         model: Cuenta,
                         as: 'cuenta',
                         attributes: ['banco', 'beneficiario', 'num_cuenta', 'tipo']
-                    },
-                    {
-                        model: require('../models/facturaRelacionModel'),
-                        as: 'facturaRelacion',
-                        include: [
-                            {
-                                model: require('../models/facturaModel'),
-                                as: 'factura',
-                                attributes: ['id_factura', 'numero_factura_correlativo', 'estado']
-                            }
-                        ]
                     }
                 ],
                 order: [['fecha', 'DESC']],
@@ -519,7 +501,7 @@ const actualizarMembresia = async (req, res) => {
 //Eliminar membresia
 const eliminarMembresia = async (req, res) => {
     try {
-        const membresia = await Membresia.destroy({ where: { id: req.params.id } });
+        const membresia = await Membresia.destroy({ where: { id_membresia: req.params.id } });
         res.json(membresia);
     } catch (error) {
         console.error("Error al eliminar membresía:", error);
@@ -527,6 +509,74 @@ const eliminarMembresia = async (req, res) => {
             error: "Error al eliminar membresía",
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+    }
+};
+
+// Aprobar membresía y colocar en la red si es necesario
+const aprobarMembresia = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+
+        // 1. Obtener la solicitud de membresía
+        const membresia = await Membresia.findByPk(id, { transaction: t });
+        if (!membresia) throw new Error("Solicitud no encontrada");
+        if (membresia.estado !== 'pendiente') throw new Error("La solicitud ya ha sido procesada");
+
+        const id_usuario = membresia.id_usuario;
+
+        // 2. Obtener el registro de red del usuario
+        const nodoRed = await RedNiveles.findOne({ where: { id_usuario }, transaction: t });
+        if (!nodoRed) throw new Error("Registro de red no encontrado para el usuario");
+
+        // 3. Si el usuario está en Nivel 0 (Pendiente de activación inicial)
+        if (nodoRed.nivel_actual === 0) {
+            console.log(`[AprobarMembresia] Colocando usuario ${id_usuario} en la red desde patrocinador ${nodoRed.id_patrocinador}`);
+            
+            // Buscar lugar en la red por derrame desde su patrocinador
+            let lugar = await encontrarPosicionSiguiente(nodoRed.id_patrocinador);
+
+            // Si el patrocinador no tiene lugar (o red llena bajo él), buscar desde la raíz (Empresa ID 1)
+            if (!lugar) {
+                console.log(`[AprobarMembresia] Sponsor ${nodoRed.id_patrocinador} full, buscando desde raíz`);
+                lugar = await encontrarPosicionSiguiente(1);
+            }
+
+            if (!lugar) throw new Error("No hay espacios disponibles en la red global");
+
+            console.log(`[AprobarMembresia] Lugar encontrado: Padre=${lugar.id_padre}, Posicion=${lugar.posicion}`);
+
+            // Actualizar nodo de red con posición y nivel 1
+            await nodoRed.update({
+                id_padre: lugar.id_padre,
+                posicion: lugar.posicion,
+                nivel_actual: 1
+            }, { transaction: t });
+
+            // Pagar comisión al patrocinador (100% de la membresía inicial)
+            // Usamos el monto pagado en la membresía
+            await CreditoUsuario.increment('monto_credito', {
+                by: membresia.monto,
+                where: { id_usuario: nodoRed.id_patrocinador },
+                transaction: t
+            });
+
+            // (Aquí podrías registrar un movimiento en HistorialFinanciero si existiera)
+        } else {
+            // Si ya estaba en nivel 1+, es una renovación
+            // Aquí podrías implementar lógica de renovación (ej. extender fecha de vencimiento)
+        }
+
+        // 4. Marcar membresía como activa
+        await membresia.update({ estado: 'activa' }, { transaction: t });
+
+        await t.commit();
+        res.json({ success: true, message: "Membresía aprobada y usuario activado en la red" });
+
+    } catch (error) {
+        await t.rollback();
+        console.error("Error al aprobar membresía:", error);
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 
@@ -538,5 +588,6 @@ module.exports = {
     crearMembresia,
     actualizarMembresia,
     eliminarMembresia,
-    obtenerProgresoMembresia
+    obtenerProgresoMembresia,
+    aprobarMembresia
 };

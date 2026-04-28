@@ -18,8 +18,7 @@ const publicacionRoutes = require("./src/routes/PublicacionRoute");
 const interaccionRoutes = require("./src/routes/InteraccionRoute");
 const creditoRoutes = require("./src/routes/CreditoRoute");
 const configRoutes = require("./src/routes/ConfigRoute");
-
-
+const redNivelesRoutes = require("./src/routes/redNivelesRoute");
 
 // Configurar las asociaciones de los modelos
 const setupAssociations = require('./src/models');
@@ -72,7 +71,7 @@ const corsOptions = {
     },
     credentials: true,
     optionsSuccessStatus: 200,
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma', 'X-Refresh-Token'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 };
 
@@ -90,6 +89,7 @@ app.use("/publicaciones", publicacionRoutes);
 app.use("/interacciones", interaccionRoutes);
 app.use("/credito", creditoRoutes);
 app.use("/config", configRoutes);
+app.use("/red", redNivelesRoutes);
 
 // Iniciar servidor
 const PORT = process.env.PORT || 4000;

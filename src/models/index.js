@@ -12,6 +12,8 @@ const SuscripcionNotificacion = require('./suscripcionesNotificacionesModel');
 const Publicacion = require('./publicacionesModel');
 const Interaccion = require('./InteraccionModel');
 const CreditoUsuario = require("./creditoUsuariosModel");
+const RedNiveles = require("./redNivelesModel");
+const Membresia = require("./membresiaModel");
 
 // Función para configurar las asociaciones
 const setupAssociations = () => {
@@ -138,6 +140,23 @@ const setupAssociations = () => {
   // Relaciones de CreditoUsuario
   Usuario.hasOne(CreditoUsuario, { foreignKey: 'id_usuario', as: 'credito' });
   CreditoUsuario.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
+
+  // Relaciones de RedNiveles
+  Usuario.hasOne(RedNiveles, { foreignKey: 'id_usuario', as: 'nodoRed' });
+  RedNiveles.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
+
+  RedNiveles.belongsTo(Usuario, { foreignKey: 'id_padre', as: 'padre' });
+  RedNiveles.belongsTo(Usuario, { foreignKey: 'id_patrocinador', as: 'patrocinador' });
+
+  Usuario.hasMany(RedNiveles, { foreignKey: 'id_padre', as: 'hijosRed' });
+  Usuario.hasMany(RedNiveles, { foreignKey: 'id_patrocinador', as: 'referidosRed' });
+  
+  // Relaciones de Membresia
+  Membresia.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
+  Usuario.hasMany(Membresia, { foreignKey: 'id_usuario', as: 'membresias' });
+
+  Membresia.belongsTo(Cuenta, { foreignKey: 'id_cuenta', as: 'cuenta' });
+  Cuenta.hasMany(Membresia, { foreignKey: 'id_cuenta', as: 'membresias' });
 
   console.log('Asociaciones de RedYMercadeo configuradas correctamente');
 };

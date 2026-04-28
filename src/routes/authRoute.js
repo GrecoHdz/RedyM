@@ -18,9 +18,7 @@ router.post('/login',
 router.post('/refresh-token', refreshToken);
 
 // Ruta para cerrar sesión
-router.post('/logout',
-    authMiddleware,
-    logout);
+router.post('/logout', logout);
 
 // Ruta para obtener información del usuario actual
 router.get('/me',

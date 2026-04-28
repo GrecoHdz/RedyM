@@ -3,6 +3,7 @@ const Publicacion = require("../models/publicacionesModel");
 const Usuario = require("../models/usuariosModel");
 const Config = require("../models/configModel");
 const CreditoUsuario = require("../models/creditoUsuariosModel");
+const Membresia = require("../models/membresiaModel");
 
 const registrarInteraccion = async (req, res) => {
     try {
@@ -23,6 +24,12 @@ const registrarInteraccion = async (req, res) => {
         const valorVideo = parseFloat(configs.find(c => c.tipo_config === 'valor_video')?.valor || 1.50);
         const valorEncuesta = parseFloat(configs.find(c => c.tipo_config === 'valor_encuesta')?.valor || 2.50);
 
+        // Verificar si el usuario tiene membresía activa para el multiplicador x2
+        const membresia = await Membresia.findOne({
+            where: { id_usuario: id_usuario, estado: 'activa' }
+        });
+        const multiplicador = membresia ? 2 : 1;
+
         // Si es un like, verificamos si ya existe para evitar duplicados
         if (tipo === 'like') {
             const existeLike = await Interaccion.findOne({
@@ -31,6 +38,8 @@ const registrarInteraccion = async (req, res) => {
 
             if (existeLike) {
                  // Si ya existe, lo quitamos (Toggle like behavior)
+                 // Guardar el monto ganado originalmente para restarlo con precisión
+                 const montoARestar = parseFloat(existeLike.monto_ganado || 0);
                  await existeLike.destroy();
                  
                  // Decrementar likes en la publicación
@@ -42,7 +51,7 @@ const registrarInteraccion = async (req, res) => {
                  // Decrementar saldo en la tabla dedicada
                  const creditoExistente = await CreditoUsuario.findOne({ where: { id_usuario } });
                  if (creditoExistente) {
-                     const nuevoMonto = parseFloat(creditoExistente.monto_credito) - valorLike;
+                     const nuevoMonto = parseFloat(creditoExistente.monto_credito) - montoARestar;
                      await CreditoUsuario.upsert({
                          id_usuario,
                          monto_credito: Math.max(0, nuevoMonto).toFixed(2),
@@ -57,9 +66,9 @@ const registrarInteraccion = async (req, res) => {
         // Determinar recompensa antes de crear la interacción para guardarla en el registro
         let recompensa = 0;
         if (tipo === 'like') {
-            recompensa = valorLike;
+            recompensa = valorLike * multiplicador;
         } else if (tipo === 'video_view') {
-            recompensa = valorVideo;
+            recompensa = valorVideo * multiplicador;
         } else if (tipo === 'poll') {
             const pub = await Publicacion.findByPk(id_publicacion);
             if (pub && pub.poll_data) {
@@ -67,7 +76,7 @@ const registrarInteraccion = async (req, res) => {
                     const parsedDetalle = typeof detalle === 'string' ? JSON.parse(detalle) : detalle;
                     const correctOption = pub.poll_data.options[pub.poll_data.correct_index];
                     if (parsedDetalle && parsedDetalle.answer === correctOption) {
-                        recompensa = valorEncuesta;
+                        recompensa = valorEncuesta * multiplicador;
                     }
                 } catch (e) {
                     console.warn("Error parsing detail for poll reward", e);
