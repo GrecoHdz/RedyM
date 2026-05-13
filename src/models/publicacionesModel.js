@@ -73,12 +73,50 @@ const Publicacion = sequelize.define("Publicacion", {
         defaultValue: 0
     },
     estado: {
-        type: DataTypes.ENUM('activa', 'borrada', 'reportada'),
-        defaultValue: 'activa'
+        type: DataTypes.ENUM('pendiente_pago', 'verificando_pago', 'activa', 'borrada', 'reportada', 'rechazada'),
+        defaultValue: 'pendiente_pago'
+    },
+    id_cuenta_pago: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
+    num_comprobante: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
+    comprobante_url: {
+        type: DataTypes.STRING(500),
+        allowNull: true
+    },
+    comprobante_public_id: {
+        type: DataTypes.STRING(200),
+        allowNull: true
     },
     whatsapp_active: {
         type: DataTypes.BOOLEAN,
         defaultValue: false
+    },
+    whatsapp_number: {
+        type: DataTypes.STRING(20),
+        allowNull: true
+    },
+    presupuesto: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        defaultValue: 0.00
+    },
+    presupuesto_restante: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        defaultValue: 0.00
+    },
+    fecha_finalizacion: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    total_interacciones: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
     }
 }, {
     timestamps: false,

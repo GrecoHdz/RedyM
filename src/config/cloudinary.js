@@ -131,5 +131,29 @@ exports.uploadPost = multer({
   }
 });
 
+// Configuración para comprobantes de pago de publicaciones
+const comprobanteStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'RedyMercadeo/publicaciones/comprobantes',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    quality: 'auto:good',
+    fetch_format: 'auto',
+    secure: true,
+    resource_type: 'image'
+  }
+});
+
+exports.uploadComprobante = multer({
+  storage: comprobanteStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      return cb(new Error('Solo se permiten imágenes para el comprobante'), false);
+    }
+    cb(null, true);
+  }
+});
+
 // Exportar la instancia de cloudinary para operaciones directas
 exports.cloudinary = cloudinary;

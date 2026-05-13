@@ -16,13 +16,23 @@ const registrarInteraccion = async (req, res) => {
         // Obtener configuración de pagos de la tabla config
         const configs = await Config.findAll({
             where: {
-                tipo_config: ['valor_like', 'valor_video', 'valor_encuesta']
+                tipo_config: [
+                    'valor_like', 
+                    'valor_video', 
+                    'valor_encuesta',
+                    'valor_visita_web',
+                    'valor_visita_whatsapp',
+                    'valor_compartir'
+                ]
             }
         });
 
         const valorLike = parseFloat(configs.find(c => c.tipo_config === 'valor_like')?.valor || 0.10);
         const valorVideo = parseFloat(configs.find(c => c.tipo_config === 'valor_video')?.valor || 1.50);
         const valorEncuesta = parseFloat(configs.find(c => c.tipo_config === 'valor_encuesta')?.valor || 2.50);
+        const valorWeb = parseFloat(configs.find(c => c.tipo_config === 'valor_visita_web')?.valor || 0.10);
+        const valorWa = parseFloat(configs.find(c => c.tipo_config === 'valor_visita_whatsapp')?.valor || 0.10);
+        const valorShare = parseFloat(configs.find(c => c.tipo_config === 'valor_compartir')?.valor || 0.20);
 
         // Verificar si el usuario tiene membresía activa para el multiplicador x2
         const membresia = await Membresia.findOne({
@@ -30,7 +40,7 @@ const registrarInteraccion = async (req, res) => {
         });
         const multiplicador = membresia ? 2 : 1;
 
-        // Si es un like, verificamos si ya existe para evitar duplicados
+        // Si es un like, verificamos si ya existe para evitar duplicados (comportamiento Toggle)
         if (tipo === 'like') {
             const existeLike = await Interaccion.findOne({
                 where: { id_publicacion, id_usuario, tipo: 'like' }
@@ -38,17 +48,22 @@ const registrarInteraccion = async (req, res) => {
 
             if (existeLike) {
                  // Si ya existe, lo quitamos (Toggle like behavior)
-                 // Guardar el monto ganado originalmente para restarlo con precisión
                  const montoARestar = parseFloat(existeLike.monto_ganado || 0);
                  await existeLike.destroy();
                  
-                 // Decrementar likes en la publicación
                  const pub = await Publicacion.findByPk(id_publicacion);
                  if (pub) {
                      await pub.decrement('likes');
+                     if (pub.total_interacciones > 0) await pub.decrement('total_interacciones');
+                     const costoInteraccion = montoARestar * 2;
+                     const presupuestoActual = parseFloat(pub.presupuesto_restante || 0);
+                     const presupuestoMax = parseFloat(pub.presupuesto || 0);
+                     await pub.update({ 
+                         presupuesto_restante: Math.min(presupuestoMax, presupuestoActual + costoInteraccion).toFixed(2),
+                         estado: 'activa'
+                     });
                  }
 
-                 // Decrementar saldo en la tabla dedicada
                  const creditoExistente = await CreditoUsuario.findOne({ where: { id_usuario } });
                  if (creditoExistente) {
                      const nuevoMonto = parseFloat(creditoExistente.monto_credito) - montoARestar;
@@ -61,6 +76,19 @@ const registrarInteraccion = async (req, res) => {
 
                  return res.json({ success: true, message: "Like retirado", action: 'unliked' });
             }
+        } else {
+            // Para cualquier otro tipo de interacción, solo permitimos UNA por usuario/publicación
+            const existeInteraccion = await Interaccion.findOne({
+                where: { id_publicacion, id_usuario, tipo }
+            });
+
+            if (existeInteraccion) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: `Ya has realizado esta interacción (${tipo}) en esta publicación anteriormente.`,
+                    already_done: true 
+                });
+            }
         }
 
         // Determinar recompensa antes de crear la interacción para guardarla en el registro
@@ -69,6 +97,12 @@ const registrarInteraccion = async (req, res) => {
             recompensa = valorLike * multiplicador;
         } else if (tipo === 'video_view') {
             recompensa = valorVideo * multiplicador;
+        } else if (tipo === 'share') {
+            recompensa = valorShare * multiplicador;
+        } else if (tipo === 'visita_web') {
+            recompensa = valorWeb * multiplicador;
+        } else if (tipo === 'visita_whatsapp') {
+            recompensa = valorWa * multiplicador;
         } else if (tipo === 'poll') {
             const pub = await Publicacion.findByPk(id_publicacion);
             if (pub && pub.poll_data) {
@@ -93,12 +127,38 @@ const registrarInteraccion = async (req, res) => {
             monto_ganado: recompensa
         });
 
-        // Actualizar contadores y saldo
+        // Actualizar contador de likes
         if (tipo === 'like') {
             const pub = await Publicacion.findByPk(id_publicacion);
             if (pub) await pub.increment('likes');
         }
 
+        // --- LÓGICA DE PRESUPUESTO ---
+        // Costo total = recompensa × 2 (50% al usuario, 50% a la plataforma)
+        // Se descuenta del presupuesto_restante de la publicación
+        if (recompensa > 0) {
+            const pub = await Publicacion.findByPk(id_publicacion);
+            if (pub) {
+                const costoTotal = recompensa * 2; // 50% usuario + 50% plataforma
+                const presupuestoActual = parseFloat(pub.presupuesto_restante || 0);
+                const nuevoPresupuesto = Math.max(0, presupuestoActual - costoTotal);
+
+                await pub.increment('total_interacciones');
+
+                if (nuevoPresupuesto <= 0) {
+                    // Presupuesto agotado: marcar publicación como finalizada/borrada
+                    await pub.update({ 
+                        presupuesto_restante: 0,
+                        estado: 'borrada',
+                        fecha_finalizacion: new Date()
+                    });
+                } else {
+                    await pub.update({ presupuesto_restante: nuevoPresupuesto.toFixed(2) });
+                }
+            }
+        }
+
+        // Acreditar la recompensa (50%) al usuario interactuante
         if (recompensa !== 0) {
             const creditoExistente = await CreditoUsuario.findOne({ where: { id_usuario } });
             let montoFinal = recompensa;

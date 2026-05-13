@@ -28,7 +28,7 @@ const Interaccion = sequelize.define("Interaccion", {
         onDelete: 'CASCADE'
     },
     tipo: {
-        type: DataTypes.ENUM('like', 'poll', 'share', 'video_view', 'click'),
+        type: DataTypes.ENUM('like', 'poll', 'share', 'video_view', 'click', 'visita_web', 'visita_whatsapp'),
         allowNull: false
     },
     detalle: {
