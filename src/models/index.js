@@ -14,6 +14,7 @@ const Interaccion = require('./InteraccionModel');
 const CreditoUsuario = require("./creditoUsuariosModel");
 const RedNiveles = require("./redNivelesModel");
 const Membresia = require("./membresiaModel");
+const Retiro = require("./retiroModel");
 
 // Función para configurar las asociaciones
 const setupAssociations = () => {
@@ -155,8 +156,14 @@ const setupAssociations = () => {
   Membresia.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
   Usuario.hasMany(Membresia, { foreignKey: 'id_usuario', as: 'membresias' });
 
+  Membresia.belongsTo(Usuario, { foreignKey: 'id_pagador', as: 'pagador' });
+
   Membresia.belongsTo(Cuenta, { foreignKey: 'id_cuenta', as: 'cuenta' });
   Cuenta.hasMany(Membresia, { foreignKey: 'id_cuenta', as: 'membresias' });
+
+  // Relaciones de Retiro
+  Retiro.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
+  Usuario.hasMany(Retiro, { foreignKey: 'id_usuario', as: 'retiros' });
 
   console.log('Asociaciones de RedYMercadeo configuradas correctamente');
 };

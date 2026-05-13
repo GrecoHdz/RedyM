@@ -2,6 +2,7 @@ const { sequelize } = require("../config/database");
 const Usuario = require("../models/usuariosModel");
 const Ciudad = require("../models/ciudadesModel");
 const Rol = require("../models/rolesModel");
+const Config = require("../models/configModel");
 const { Op } = require("sequelize");
 const bcrypt = require("bcryptjs");
 const { cloudinary } = require("../config/cloudinary");
@@ -10,12 +11,16 @@ const saltRounds = 10;
 // OBTENER TODOS LOS USUARIOS (READ ALL)
 const obtenerUsuarios = async (req, res) => {
     try {
-        const { estado, rol, id_ciudad } = req.query;
+        const { estado, rol, id_ciudad, verificado, tieneIdentidad } = req.query;
         const whereCondition = {};
 
         if (estado) whereCondition.estado = estado;
         if (id_ciudad) whereCondition.id_ciudad = id_ciudad;
         if (rol) whereCondition['$rol.id_rol$'] = rol;
+        if (verificado !== undefined) whereCondition.verificado = verificado === 'true';
+        if (tieneIdentidad === 'true') {
+            whereCondition.identidad_url = { [Op.ne]: null };
+        }
 
         const usuarios = await Usuario.findAll({
             where: whereCondition,
@@ -116,10 +121,26 @@ const crearUsuario = async (req, res) => {
 
         // Si hay patrocinador, registrar en la red (Nivel 0 - Pendiente de Pago)
         if (!es_tecnico) {
+            let patrocinadorFinal = id_patrocinador;
+
+            // Si no viene id_patrocinador, buscar el predeterminado en la tabla config
+            if (!patrocinadorFinal) {
+                const configReferido = await Config.findOne({
+                    where: { tipo_config: 'referido_predeterminado' },
+                    transaction: t
+                });
+                if (configReferido) {
+                    patrocinadorFinal = parseInt(configReferido.valor);
+                } else {
+                    // Fallback a 1 si no está configurado (aunque el usuario dice que ahí estará)
+                    patrocinadorFinal = 1;
+                }
+            }
+
             const RedNiveles = require("../models/redNivelesModel");
             await RedNiveles.create({
                 id_usuario: nuevoUsuario.id_usuario,
-                id_patrocinador: id_patrocinador || 1, // 1 = Empresa si no hay patrocinador
+                id_patrocinador: patrocinadorFinal,
                 nivel_actual: 0
             }, { transaction: t });
         }
@@ -404,9 +425,47 @@ const cambioClave = async (req, res) => {
     }
 };
 
+// BUSCAR USUARIO POR IDENTIDAD (PARA REGALOS)
+const obtenerUsuarioByIdentidad = async (req, res) => {
+    try {
+        const { identidad } = req.params;
+        const Membresia = require("../models/membresiaModel");
+
+        const usuario = await Usuario.findOne({
+            where: { 
+                identidad,
+                estado: 'activo' // Solo buscar usuarios activos
+            },
+            attributes: ['id_usuario', 'nombre', 'identidad', 'imagen_url', 'estado'],
+            include: [{
+                model: Membresia,
+                as: 'membresias', // Asegúrate de que el alias coincida con el definido en models/index.js
+                limit: 1,
+                order: [['fecha', 'DESC']],
+                attributes: ['estado']
+            }]
+        });
+
+        if (!usuario) {
+            return res.status(404).json({ success: false, message: "Usuario no encontrado o no está habilitado" });
+        }
+
+        // Aplanar el estado de la membresía para facilidad del frontend
+        const data = usuario.toJSON();
+        data.estado_membresia = data.membresias?.[0]?.estado || 'ninguna';
+        delete data.membresias;
+
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error("Error al buscar por identidad:", error);
+        res.status(500).json({ success: false, message: "Error en el servidor" });
+    }
+};
+
 module.exports = {
     obtenerUsuarios,
     obtenerUsuarioPorId,
+    obtenerUsuarioByIdentidad,
     crearUsuario,
     actualizarUsuario,
     eliminarUsuario,

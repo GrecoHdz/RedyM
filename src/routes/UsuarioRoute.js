@@ -5,6 +5,7 @@ const { authMiddleware } = require("../middlewares/authMiddleware");
 const {
     obtenerUsuarios,
     obtenerUsuarioPorId,
+    obtenerUsuarioByIdentidad,
     crearUsuario,
     actualizarUsuario,
     eliminarUsuario,
@@ -21,6 +22,9 @@ router.get("/", authMiddleware, obtenerUsuarios);
 
 // OBTENER UN USUARIO POR ID (READ ONE)
 router.get("/:id", authMiddleware, obtenerUsuarioPorId);
+
+// BUSCAR POR IDENTIDAD (PARA REGALOS)
+router.get("/identidad/:identidad", authMiddleware, obtenerUsuarioByIdentidad);
 
 // CREAR USUARIO (CREATE)
 router.post("/nuevo", crearUsuario);

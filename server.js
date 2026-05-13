@@ -19,6 +19,7 @@ const interaccionRoutes = require("./src/routes/InteraccionRoute");
 const creditoRoutes = require("./src/routes/CreditoRoute");
 const configRoutes = require("./src/routes/ConfigRoute");
 const redNivelesRoutes = require("./src/routes/redNivelesRoute");
+const retiroRoutes = require("./src/routes/RetiroRoute");
 
 // Configurar las asociaciones de los modelos
 const setupAssociations = require('./src/models');
@@ -90,6 +91,7 @@ app.use("/interacciones", interaccionRoutes);
 app.use("/credito", creditoRoutes);
 app.use("/config", configRoutes);
 app.use("/red", redNivelesRoutes);
+app.use("/retiros", retiroRoutes);
 
 // Iniciar servidor
 const PORT = process.env.PORT || 4000;

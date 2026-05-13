@@ -12,7 +12,9 @@ const {
   actualizarMembresia,
   eliminarMembresia,
   obtenerProgresoMembresia,
-  aprobarMembresia
+  aprobarMembresia,
+  regalarMembresia,
+  rechazarMembresia
 } = require("../controllers/MembresiaController");
 
 // Middleware de autenticación
@@ -76,6 +78,26 @@ router.post("/aprobar/:id",
   ],
   validarErrores,
   aprobarMembresia
+);
+
+// Regalar membresía
+router.post("/regalar", 
+  [
+    body("id_usuario_destino").isInt(),
+    body("id_usuario_pagador").isInt(),
+    body("monto").isNumeric()
+  ],
+  validarErrores,
+  regalarMembresia
+);
+
+// Rechazar membresía
+router.post("/rechazar/:id",
+  [
+    param("id").isInt()
+  ],
+  validarErrores,
+  rechazarMembresia
 );
 
 // Actualizar membresia (solo administradores)

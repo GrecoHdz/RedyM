@@ -42,6 +42,16 @@ const Membresia = sequelize.define("Membresia", {
   estado: {
     type: DataTypes.ENUM("activa", "vencida", "pendiente", "rechazada"),
     allowNull: false
+  },
+  id_pagador: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'usuario',
+      key: 'id_usuario'
+    },
+    onUpdate: 'CASCADE',
+    onDelete: 'SET NULL'
   }
 }, {
   timestamps: false,

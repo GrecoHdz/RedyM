@@ -78,6 +78,11 @@ const obtenerMembresias = async (req, res) => {
                         attributes: ['id_usuario', 'nombre', 'telefono']
                     },
                     {
+                        model: Usuario,
+                        as: 'pagador',
+                        attributes: ['id_usuario', 'nombre']
+                    },
+                    {
                         model: Cuenta,
                         as: 'cuenta',
                         attributes: ['banco', 'beneficiario', 'num_cuenta', 'tipo']
@@ -256,6 +261,24 @@ const obtenerMembresiaActual = async (req, res) => {
     try {
         const { id } = req.params;
 
+        // Caso especial: El primer usuario registrado (Empresa) siempre está activo
+        const firstUser = await Usuario.findOne({ order: [['id_usuario', 'ASC']], attributes: ['id_usuario'] });
+        const rootId = firstUser ? firstUser.id_usuario : 1;
+
+        if (parseInt(id) === rootId) {
+            return res.json({
+                status: 'success',
+                data: {
+                    id_membresia: 0,
+                    id_usuario: rootId,
+                    estado: 'activa',
+                    fecha: new Date(),
+                    monto: 0,
+                    num_transaccion: 'SISTEMA'
+                }
+            });
+        }
+
         const membresia = await Membresia.findOne({
             where: { id_usuario: id },
             order: [['fecha', 'DESC']],
@@ -315,6 +338,20 @@ const obtenerProgresoMembresia = async (req, res) => {
             })
         ]);
 
+        // Caso especial: El primer usuario registrado (Empresa)
+        const firstUser = await Usuario.findOne({ order: [['id_usuario', 'ASC']], attributes: ['id_usuario'] });
+        const rootId = firstUser ? firstUser.id_usuario : 1;
+
+        if (parseInt(req.params.id_usuario) === rootId) {
+            return res.json({
+                status: 'success',
+                mesesProgreso: 999,
+                montoTotal: 0,
+                valorMembresia: 0,
+                porcentaje_descuento: '0'
+            });
+        }
+
         if (!configMembresia) {
             return res.status(500).json({
                 status: 'error',
@@ -367,6 +404,23 @@ const obtenerProgresoMembresia = async (req, res) => {
         const diffDesdeHoy = Math.floor((hoy - pagoMasReciente) / (1000 * 60 * 60 * 24));
 
         if (diffDesdeHoy > diasPorMes) {
+            // Actualizar RedNiveles para sacar al usuario de la matriz físicamente
+            // Ignorar si es el usuario raíz (el primero registrado)
+            const id_usuario_p = parseInt(req.params.id_usuario);
+            
+            const firstUser = await Usuario.findOne({
+                order: [['id_usuario', 'ASC']],
+                attributes: ['id_usuario']
+            });
+            const rootId = firstUser ? firstUser.id_usuario : 1;
+
+            if (id_usuario_p !== rootId) {
+                await RedNiveles.update(
+                    { id_padre: null, posicion: null, nivel_actual: 0 },
+                    { where: { id_usuario: id_usuario_p } }
+                );
+            }
+
             return res.json({
                 status: 'success',
                 mesesProgreso: 0,
@@ -529,17 +583,21 @@ const aprobarMembresia = async (req, res) => {
         const nodoRed = await RedNiveles.findOne({ where: { id_usuario }, transaction: t });
         if (!nodoRed) throw new Error("Registro de red no encontrado para el usuario");
 
+        let lugar = null;
+
         // 3. Si el usuario está en Nivel 0 (Pendiente de activación inicial)
         if (nodoRed.nivel_actual === 0) {
             console.log(`[AprobarMembresia] Colocando usuario ${id_usuario} en la red desde patrocinador ${nodoRed.id_patrocinador}`);
             
             // Buscar lugar en la red por derrame desde su patrocinador
-            let lugar = await encontrarPosicionSiguiente(nodoRed.id_patrocinador);
+            lugar = await encontrarPosicionSiguiente(nodoRed.id_patrocinador);
 
-            // Si el patrocinador no tiene lugar (o red llena bajo él), buscar desde la raíz (Empresa ID 1)
+            // Si el patrocinador no tiene lugar (o red llena bajo él), buscar desde la raíz (Primer usuario)
             if (!lugar) {
                 console.log(`[AprobarMembresia] Sponsor ${nodoRed.id_patrocinador} full, buscando desde raíz`);
-                lugar = await encontrarPosicionSiguiente(1);
+                const firstUser = await Usuario.findOne({ order: [['id_usuario', 'ASC']], attributes: ['id_usuario'] });
+                const rootId = firstUser ? firstUser.id_usuario : 1;
+                lugar = await encontrarPosicionSiguiente(rootId);
             }
 
             if (!lugar) throw new Error("No hay espacios disponibles en la red global");
@@ -570,12 +628,94 @@ const aprobarMembresia = async (req, res) => {
         // 4. Marcar membresía como activa
         await membresia.update({ estado: 'activa' }, { transaction: t });
 
+        // 5. INTENTAR UPGRADES AUTOMÁTICOS
+        // Primero para el padre (quien acaba de recibir un hijo o una renovación en su red)
+        // Segundo para el patrocinador (quien acaba de recibir la comisión)
+        const { procesarAutoUpgradeInterno } = require("./redNivelesController");
+        
+        // El padre puede venir de 'lugar' (nueva activación) o de 'nodoRed' (renovación)
+        const id_padre_a_subir = lugar ? lugar.id_padre : nodoRed.id_padre;
+        
+        if (id_padre_a_subir) {
+            await procesarAutoUpgradeInterno(id_padre_a_subir, t);
+        }
+        
+        if (nodoRed && nodoRed.id_patrocinador) {
+            await procesarAutoUpgradeInterno(nodoRed.id_patrocinador, t);
+        }
+
         await t.commit();
         res.json({ success: true, message: "Membresía aprobada y usuario activado en la red" });
 
     } catch (error) {
         await t.rollback();
         console.error("Error al aprobar membresía:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Regalar membresía usando saldo
+const regalarMembresia = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const { id_usuario_destino, id_usuario_pagador, monto } = req.body;
+
+        // 1. Validar saldo del pagador
+        const saldo = await CreditoUsuario.findOne({ where: { id_usuario: id_usuario_pagador }, transaction: t });
+        if (!saldo || saldo.monto_credito < monto) {
+            throw new Error("Saldo insuficiente para regalar la membresía");
+        }
+
+        // 2. Descontar saldo inmediatamente
+        await CreditoUsuario.decrement('monto_credito', {
+            by: monto,
+            where: { id_usuario: id_usuario_pagador },
+            transaction: t
+        });
+
+        // 3. Crear solicitud de membresía pendiente
+        const membresia = await Membresia.create({
+            id_usuario: id_usuario_destino,
+            id_pagador: id_usuario_pagador,
+            monto,
+            fecha: new Date(),
+            estado: 'pendiente',
+            num_comprobante: `REGALO_DE_USUARIO_${id_usuario_pagador}`
+        }, { transaction: t });
+
+        await t.commit();
+        res.status(201).json({ success: true, message: "Regalo enviado. Pendiente de aprobación por admin.", data: membresia });
+    } catch (error) {
+        await t.rollback();
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Rechazar membresía (con devolución de saldo si aplica)
+const rechazarMembresia = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const membresia = await Membresia.findByPk(id, { transaction: t });
+
+        if (!membresia) throw new Error("Membresía no encontrada");
+        if (membresia.estado !== 'pendiente') throw new Error("Solo se pueden rechazar solicitudes pendientes");
+
+        // Si hay pagador (regalo), devolver el saldo
+        if (membresia.id_pagador) {
+            await CreditoUsuario.increment('monto_credito', {
+                by: membresia.monto,
+                where: { id_usuario: membresia.id_pagador },
+                transaction: t
+            });
+        }
+
+        await membresia.update({ estado: 'rechazada' }, { transaction: t });
+
+        await t.commit();
+        res.json({ success: true, message: "Membresía rechazada y saldo devuelto si correspondía" });
+    } catch (error) {
+        await t.rollback();
         res.status(500).json({ success: false, error: error.message });
     }
 };
@@ -589,5 +729,7 @@ module.exports = {
     actualizarMembresia,
     eliminarMembresia,
     obtenerProgresoMembresia,
-    aprobarMembresia
+    aprobarMembresia,
+    regalarMembresia,
+    rechazarMembresia
 };

@@ -16,11 +16,53 @@ const LEVEL_COSTS = {
 };
 
 /**
+ * Obtener el ID del usuario raíz (el primero registrado)
+ */
+const getRootUserId = async () => {
+    const firstUser = await Usuario.findOne({
+        order: [['id_usuario', 'ASC']],
+        attributes: ['id_usuario']
+    });
+    return firstUser ? firstUser.id_usuario : 1;
+};
+
+/**
  * Obtener la vista de red de un usuario (solo nivel 1 directo)
  */
 const getMiRed = async (req, res) => {
     try {
         const id_usuario = parseInt(req.params.id_usuario);
+        const RedNiveles = require("../models/redNivelesModel");
+        const Membresia = require("../models/membresiaModel");
+
+        if (id_usuario !== await getRootUserId()) {
+            const membresiaReciente = await Membresia.findOne({
+                where: { id_usuario },
+                order: [['fecha', 'DESC']]
+            });
+
+            if (!membresiaReciente || membresiaReciente.estado !== 'activa') {
+                // Si no está activa o está pendiente/vencida, se saca de la matriz
+                await RedNiveles.update(
+                    { id_padre: null, posicion: null, nivel_actual: 0 },
+                    { where: { id_usuario } }
+                );
+            } else {
+                // Verificar vencimiento por tiempo (30 días)
+                const hoy = new Date();
+                const fechaPago = new Date(membresiaReciente.fecha);
+                const diasDiferencia = (hoy - fechaPago) / (1000 * 60 * 60 * 24);
+
+                if (diasDiferencia > 30) {
+                    // Marcar como vencida y sacar de la red
+                    await membresiaReciente.update({ estado: 'vencida' });
+                    await RedNiveles.update(
+                        { id_padre: null, posicion: null, nivel_actual: 0 },
+                        { where: { id_usuario } }
+                    );
+                }
+            }
+        }
 
         // 1. Obtener referidos directos primero (quienes el usuario invitó con su link)
         const directos = await RedNiveles.findAll({
@@ -38,7 +80,7 @@ const getMiRed = async (req, res) => {
         console.log(`[RedController] Referidos directos encontrados para ${id_usuario}:`, directos.length);
 
         // 2. Obtener mi propia información en la red (puede no existir si es Admin o cuenta antigua)
-        const infoRed = await RedNiveles.findOne({
+        let infoRed = await RedNiveles.findOne({
             where: { id_usuario: id_usuario },
             include: [
                 { model: Usuario, as: 'usuario', attributes: ['nombre', 'imagen_url'] },
@@ -46,6 +88,29 @@ const getMiRed = async (req, res) => {
                 { model: Usuario, as: 'patrocinador', attributes: ['nombre'] }
             ]
         });
+
+        // AUTO-SANACIÓN: Si es el usuario raíz y no tiene registro, lo aseguramos con findOrCreate
+        const rootId = await getRootUserId();
+        if (!infoRed && id_usuario === rootId) {
+            console.log(`[SelfHealing] Asegurando nodo raíz para ${id_usuario}`);
+            await RedNiveles.findOrCreate({
+                where: { id_usuario },
+                defaults: {
+                    id_usuario,
+                    nivel_actual: 1,
+                    id_patrocinador: id_usuario
+                }
+            });
+            // Recargar con asociaciones después de asegurar existencia
+            infoRed = await RedNiveles.findOne({
+                where: { id_usuario },
+                include: [
+                    { model: Usuario, as: 'usuario', attributes: ['nombre', 'imagen_url'] },
+                    { model: Usuario, as: 'padre', attributes: ['nombre'] },
+                    { model: Usuario, as: 'patrocinador', attributes: ['nombre'] }
+                ]
+            });
+        }
 
         // 3. Obtener hijos directos en la matriz (quienes están justo debajo en el árbol 3x5)
         // Se buscan SIEMPRE, incluso si el usuario no tiene su propio registro en RedNiveles aún
@@ -164,9 +229,10 @@ const unirseARed = async (req, res) => {
         let lugar = await encontrarPosicionSiguiente(id_patrocinador);
         
         // 3. Si por alguna razón el patrocinador no sirve (ej. no existe en red), 
-        // usar el ID 1 (Empresa) como respaldo
+        // usar el primer usuario como respaldo
         if (!lugar) {
-            lugar = await encontrarPosicionSiguiente(1);
+            const rootId = await getRootUserId();
+            lugar = await encontrarPosicionSiguiente(rootId);
         }
 
         if (!lugar) throw new Error("No hay espacios disponibles en la red");
@@ -215,10 +281,18 @@ const subirNivel = async (req, res) => {
     const t = await sequelize.transaction();
     try {
         const { id_usuario } = req.body;
+        console.log(`[subirNivel] Solicitado por ${id_usuario}`);
         const nodo = await RedNiveles.findOne({ where: { id_usuario } });
+        console.log(`[subirNivel] Nodo encontrado:`, nodo ? { id: nodo.id_usuario, nivel: nodo.nivel_actual } : 'NULL');
         
-        if (!nodo || nodo.nivel_actual >= MAX_LEVELS) {
-            throw new Error("No se puede subir más de nivel");
+        if (!nodo) {
+            console.error(`[subirNivel] Error: No se encontró registro de red para el usuario ${id_usuario}`);
+            throw new Error("No estás registrado en la red");
+        }
+
+        if (nodo.nivel_actual >= MAX_LEVELS) {
+            console.error(`[subirNivel] Error: Usuario ${id_usuario} ya está en el nivel máximo (${nodo.nivel_actual}/${MAX_LEVELS})`);
+            throw new Error(`Ya has alcanzado el nivel máximo (${MAX_LEVELS})`);
         }
 
         const siguienteNivel = nodo.nivel_actual + 1;
@@ -237,35 +311,62 @@ const subirNivel = async (req, res) => {
             throw new Error(`Saldo insuficiente. Necesitas $${costo} para subir al nivel ${siguienteNivel}`);
         }
 
-        // 2. Encontrar quién debe recibir el pago (Salto de niveles)
-        // Si sube a Nivel 2, le paga al "abuelo" (2 niveles arriba)
-        // Si sube a Nivel 3, le paga al "bisabuelo" (3 niveles arriba)
-        let beneficiario = nodo.id_padre;
+        // 2. Encontrar quién debe recibir el pago (Compresión Dinámica)
+        // El pago corresponde al N-ésimo nivel arriba, pero el receptor debe ser mínimo ese nivel
+        let id_beneficiario = null;
+        let actual = nodo.id_padre;
+        const rootId = await getRootUserId();
+
+        // Primero saltamos N-1 veces para llegar al receptor teórico
         for (let i = 1; i < siguienteNivel; i++) {
-            if (beneficiario) {
-                const parentNode = await RedNiveles.findOne({ where: { id_usuario: beneficiario } });
-                beneficiario = parentNode ? parentNode.id_padre : 1; // 1 = Empresa si se acaba la red
+            if (actual) {
+                const p = await RedNiveles.findOne({ where: { id_usuario: actual } });
+                actual = p ? p.id_padre : rootId;
             } else {
-                beneficiario = 1;
+                actual = rootId;
             }
         }
         
-        const id_beneficiario = beneficiario || 1;
+        // Aplicar Compresión: Buscar hacia arriba hasta hallar a alguien con nivel >= siguienteNivel
+        let calificado = false;
+        let bActual = actual;
+
+        while (!calificado && bActual && bActual !== rootId) {
+            const bNode = await RedNiveles.findOne({ where: { id_usuario: bActual } });
+            if (bNode && bNode.nivel_actual >= siguienteNivel) {
+                calificado = true;
+                id_beneficiario = bActual;
+            } else {
+                // Si no está calificado, saltamos al siguiente padre
+                bActual = bNode ? bNode.id_padre : rootId;
+            }
+        }
+        
+        // Si nadie está calificado en la línea ascendente, el pago va a la cuenta raíz
+        if (!calificado) id_beneficiario = rootId;
 
         // 3. Procesar pagos
-        // Descontar al usuario
-        await CreditoUsuario.decrement('monto_credito', {
-            by: costo,
-            where: { id_usuario },
-            transaction: t
-        });
+        const saldoUsuario = await CreditoUsuario.findOne({ where: { id_usuario }, transaction: t });
+        let montoFinalUser = parseFloat(saldoUsuario ? saldoUsuario.monto_credito : 0) - costo;
+        montoFinalUser = parseFloat(montoFinalUser.toFixed(2));
 
-        // Acreditar al beneficiario
-        await CreditoUsuario.increment('monto_credito', {
-            by: costo,
-            where: { id_usuario: id_beneficiario },
-            transaction: t
-        });
+        await CreditoUsuario.upsert({
+            id_usuario,
+            monto_credito: montoFinalUser,
+            fecha: new Date()
+        }, { transaction: t });
+        console.log(`[subirNivel] 💸 Saldo Usuario ${id_usuario} actualizado a: $${montoFinalUser}`);
+
+        const saldoBeneficiario = await CreditoUsuario.findOne({ where: { id_usuario: id_beneficiario }, transaction: t });
+        let montoFinalBen = parseFloat(saldoBeneficiario ? saldoBeneficiario.monto_credito : 0) + costo;
+        montoFinalBen = parseFloat(montoFinalBen.toFixed(2));
+
+        await CreditoUsuario.upsert({
+            id_usuario: id_beneficiario,
+            monto_credito: montoFinalBen,
+            fecha: new Date()
+        }, { transaction: t });
+        console.log(`[subirNivel] 💰 Saldo Beneficiario ${id_beneficiario} actualizado a: $${montoFinalBen}`);
 
         // 4. Actualizar nivel
         await nodo.update({ nivel_actual: siguienteNivel }, { transaction: t });
@@ -286,6 +387,28 @@ const subirNivel = async (req, res) => {
 const getProgresoRed = async (req, res) => {
     try {
         const id_usuario = parseInt(req.params.id_usuario);
+        const Membresia = require("../models/membresiaModel");
+
+        // Sincronizar estado antes de calcular progreso
+        // Ignorar si es el ID raíz
+        const rootId = await getRootUserId();
+        if (id_usuario !== rootId) {
+            const m = await Membresia.findOne({
+                where: { id_usuario },
+                order: [['fecha', 'DESC']]
+            });
+
+            if (!m || m.estado !== 'activa') {
+                await RedNiveles.update({ id_padre: null, posicion: null, nivel_actual: 0 }, { where: { id_usuario } });
+            } else {
+                const hoy = new Date();
+                const fechaM = new Date(m.fecha);
+                if ((hoy - fechaM) / (1000 * 60 * 60 * 24) > 30) {
+                    await m.update({ estado: 'vencida' });
+                    await RedNiveles.update({ id_padre: null, posicion: null, nivel_actual: 0 }, { where: { id_usuario } });
+                }
+            }
+        }
         
         // Estructura inicial del progreso
         let progreso = {
@@ -311,7 +434,17 @@ const getProgresoRed = async (req, res) => {
         }
 
         // También obtener el nivel actual del usuario
-        const miNodo = await RedNiveles.findOne({ where: { id_usuario } });
+        let miNodo = await RedNiveles.findOne({ where: { id_usuario } });
+
+        // AUTO-SANACIÓN: Si es raíz y no tiene nodo, lo aseguramos aquí también
+        if (!miNodo && id_usuario === rootId) {
+            console.log(`[SelfHealing-Progreso] Asegurando nodo raíz para ${id_usuario}`);
+            await RedNiveles.findOrCreate({
+                where: { id_usuario },
+                defaults: { id_usuario, nivel_actual: 1, id_patrocinador: id_usuario }
+            });
+            miNodo = await RedNiveles.findOne({ where: { id_usuario } });
+        }
 
         res.json({ 
             success: true, 
@@ -326,11 +459,140 @@ const getProgresoRed = async (req, res) => {
     }
 };
 
+/**
+ * Lógica interna para procesar un upgrade (sin requerir req/res)
+ * Útil para disparar upgrades automáticos desde otros procesos como la aprobación de membresía
+ */
+const procesarAutoUpgradeInterno = async (id_usuario, t_existente = null) => {
+    const t = t_existente || await sequelize.transaction();
+    try {
+        console.log(`[AutoUpgrade] 🔍 Verificando condiciones para Usuario ${id_usuario}`);
+        const nodo = await RedNiveles.findOne({ where: { id_usuario }, transaction: t });
+        
+        if (!nodo) {
+            console.log(`[AutoUpgrade] ⚠️ No se encontró registro en matriz para ${id_usuario}.`);
+            return;
+        }
+
+        if (nodo.nivel_actual === 0) {
+            console.log(`[AutoUpgrade] ⏭️ Usuario ${id_usuario} está en Nivel 0 (Inactivo), saltando.`);
+            return;
+        }
+
+        if (nodo.nivel_actual >= MAX_LEVELS) {
+            console.log(`[AutoUpgrade] ✅ Usuario ${id_usuario} ya está en el nivel máximo (${MAX_LEVELS}).`);
+            return;
+        }
+
+        const siguienteNivel = nodo.nivel_actual + 1;
+        console.log(`[AutoUpgrade] 📈 Usuario ${id_usuario} está en Nivel ${nodo.nivel_actual}. Objetivo: Nivel ${siguienteNivel}`);
+
+        // Regla: Para pasar de L1 a L2 necesita 3 hijos directos activos en matriz
+        if (nodo.nivel_actual === 1) {
+            const hijosCount = await RedNiveles.count({ 
+                where: { id_padre: id_usuario, nivel_actual: { [Op.gt]: 0 } },
+                transaction: t
+            });
+            console.log(`[AutoUpgrade] 👥 Red L1 del Usuario ${id_usuario}: ${hijosCount}/3 miembros activos.`);
+            if (hijosCount < 3) {
+                console.log(`[AutoUpgrade] ⏳ Faltan miembros en L1 para calificar al Nivel 2.`);
+                return;
+            }
+        }
+
+        // Obtener costo
+        const Config = require("../models/configModel");
+        const configNivel = await Config.findOne({ 
+            where: { tipo_config: `nivel${siguienteNivel}_costo` },
+            transaction: t
+        });
+        const costo = configNivel ? parseFloat(configNivel.valor) : LEVEL_COSTS[siguienteNivel];
+
+        // Validar saldo
+        const saldo = await CreditoUsuario.findOne({ where: { id_usuario }, transaction: t });
+        const canAfford = saldo && saldo.monto_credito >= costo;
+        
+        console.log(`[AutoUpgrade] 💰 Saldo de Usuario ${id_usuario}: $${saldo ? saldo.monto_credito : 0}. Costo Nivel ${siguienteNivel}: $${costo}`);
+        
+        if (!canAfford) {
+            console.log(`[AutoUpgrade] ❌ Saldo insuficiente para upgrade automático.`);
+            return;
+        }
+
+        console.log(`[AutoUpgrade] 🚀 ¡Condiciones cumplidas! Procesando upgrade al Nivel ${siguienteNivel}...`);
+
+        // Encontrar beneficiario con Compresión Dinámica
+        let id_beneficiario = null;
+        let actual = nodo.id_padre;
+        const rootId = await getRootUserId();
+
+        for (let i = 1; i < siguienteNivel; i++) {
+            if (actual) {
+                const p = await RedNiveles.findOne({ where: { id_usuario: actual }, transaction: t });
+                actual = p ? p.id_padre : rootId;
+            } else {
+                actual = rootId;
+            }
+        }
+        
+        let calificado = false;
+        let bActual = actual;
+        while (!calificado && bActual && bActual !== rootId) {
+            const bNode = await RedNiveles.findOne({ where: { id_usuario: bActual }, transaction: t });
+            if (bNode && bNode.nivel_actual >= siguienteNivel) {
+                calificado = true;
+                id_beneficiario = bActual;
+            } else {
+                bActual = bNode ? bNode.id_padre : rootId;
+            }
+        }
+        if (!calificado) id_beneficiario = rootId;
+
+        console.log(`[AutoUpgrade] 💸 Beneficiario de comisión (Nivel ${siguienteNivel}): Usuario ${id_beneficiario}`);
+
+        // Ejecutar transacciones financieras
+        const saldoUsuario = await CreditoUsuario.findOne({ where: { id_usuario }, transaction: t });
+        let montoFinalUser = parseFloat(saldoUsuario ? saldoUsuario.monto_credito : 0) - costo;
+        montoFinalUser = parseFloat(montoFinalUser.toFixed(2));
+
+        await CreditoUsuario.upsert({
+            id_usuario,
+            monto_credito: montoFinalUser,
+            fecha: new Date()
+        }, { transaction: t });
+        console.log(`[AutoUpgrade] 💸 Saldo Usuario ${id_usuario} actualizado a: $${montoFinalUser}`);
+
+        const saldoBeneficiario = await CreditoUsuario.findOne({ where: { id_usuario: id_beneficiario }, transaction: t });
+        let montoFinalBen = parseFloat(saldoBeneficiario ? saldoBeneficiario.monto_credito : 0) + costo;
+        montoFinalBen = parseFloat(montoFinalBen.toFixed(2));
+
+        await CreditoUsuario.upsert({
+            id_usuario: id_beneficiario,
+            monto_credito: montoFinalBen,
+            fecha: new Date()
+        }, { transaction: t });
+        console.log(`[AutoUpgrade] 💰 Saldo Beneficiario ${id_beneficiario} actualizado a: $${montoFinalBen}`);
+        
+        await nodo.update({ nivel_actual: siguienteNivel }, { transaction: t });
+
+        if (!t_existente) await t.commit();
+        console.log(`[AutoUpgrade] ✨ ¡ÉXITO! Usuario ${id_usuario} ha subido al Nivel ${siguienteNivel} automáticamente.`);
+        
+        // RECURSIVIDAD: Intentar subir al siguiente nivel si ya tiene las condiciones para el que sigue
+        await procesarAutoUpgradeInterno(id_usuario, t);
+
+    } catch (error) {
+        if (!t_existente) await t.rollback();
+        console.error(`[AutoUpgrade] Error procesando upgrade para ${id_usuario}:`, error.message);
+    }
+};
+
 module.exports = {
     getMiRed,
     getHijosDeUsuario,
     getProgresoRed,
     unirseARed,
     subirNivel,
+    procesarAutoUpgradeInterno,
     encontrarPosicionSiguiente
 };
