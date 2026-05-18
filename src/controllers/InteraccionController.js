@@ -198,7 +198,36 @@ const obtenerInteracciones = async (req, res) => {
     }
 };
 
+const obtenerInteraccionesPorUsuario = async (req, res) => {
+    try {
+        const { id_usuario } = req.params;
+        const interacciones = await Interaccion.findAll({
+            where: { id_usuario },
+            include: [
+                {
+                    model: Publicacion,
+                    as: 'publicacion',
+                    attributes: ['content', 'media'],
+                    include: [
+                        {
+                            model: Usuario,
+                            as: 'usuario',
+                            attributes: ['nombre']
+                        }
+                    ]
+                }
+            ],
+            order: [['fecha', 'DESC']]
+        });
+        res.json({ success: true, data: interacciones });
+    } catch (error) {
+        console.error("Error al obtener interacciones por usuario:", error);
+        res.status(500).json({ success: false, message: "Error al obtener historial" });
+    }
+};
+
 module.exports = {
     registrarInteraccion,
-    obtenerInteracciones
+    obtenerInteracciones,
+    obtenerInteraccionesPorUsuario
 };
