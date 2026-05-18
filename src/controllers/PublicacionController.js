@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const Publicacion = require("../models/publicacionesModel");
 const Usuario = require("../models/usuariosModel");
+const Rol = require("../models/rolesModel");
 const Interaccion = require("../models/InteraccionModel");
 const { cloudinary } = require("../config/cloudinary");
 
@@ -9,14 +10,28 @@ const crearPublicacion = async (req, res) => {
         const { id_usuario, content, external_url, poll_data, whatsapp_active, whatsapp_number, presupuesto } = req.body;
         const files = req.files || [];
 
-        const usuario = await Usuario.findByPk(id_usuario);
+        const usuario = await Usuario.findByPk(id_usuario, {
+            include: [{ model: Rol, as: 'rol' }]
+        });
         if (!usuario) {
             return res.status(404).json({ success: false, message: "Usuario no encontrado" });
         }
 
+        const rolName = usuario.rol?.nombre_rol?.toLowerCase();
+        const isAdmin = rolName === 'sa' || rolName === 'admin';
+
         const presupuestoNum = parseFloat(presupuesto || 0);
-        if (presupuestoNum < 50) {
+        
+        // El presupuesto mínimo es 50 solo para usuarios normales
+        if (!isAdmin && presupuestoNum < 50) {
             return res.status(400).json({ success: false, message: "El presupuesto mínimo es L. 50" });
+        }
+
+        // Para admins, si no ponen presupuesto o es 0, les ponemos uno simbólico muy alto para que no se agote
+        // o simplemente lo que hayan puesto si es >= 0.
+        let finalPresupuesto = presupuestoNum;
+        if (isAdmin && presupuestoNum <= 0) {
+            finalPresupuesto = 999999.00; // Presupuesto "infinito" para admins
         }
 
         const media = files.map(file => ({
@@ -34,7 +49,7 @@ const crearPublicacion = async (req, res) => {
             }
         }
 
-        // Estado inicial: pendiente_pago (no se muestra en el feed hasta que el admin apruebe)
+        // Estado inicial: activa para admins, pendiente_pago para el resto
         const nuevaPublicacion = await Publicacion.create({
             id_usuario,
             content: content || "",
@@ -43,15 +58,15 @@ const crearPublicacion = async (req, res) => {
             whatsapp_active: whatsapp_active === 'true' || whatsapp_active === true,
             whatsapp_number: whatsapp_number || null,
             media: media,
-            estado: 'pendiente_pago',
-            presupuesto: presupuestoNum.toFixed(2),
-            presupuesto_restante: presupuestoNum.toFixed(2),
+            estado: isAdmin ? 'activa' : 'pendiente_pago',
+            presupuesto: finalPresupuesto.toFixed(2),
+            presupuesto_restante: finalPresupuesto.toFixed(2),
             total_interacciones: 0
         });
 
         res.status(201).json({
             success: true,
-            message: "Publicación creada. Procede a registrar el pago.",
+            message: isAdmin ? "Publicación creada con éxito" : "Publicación creada. Procede a registrar el pago.",
             data: nuevaPublicacion
         });
 
