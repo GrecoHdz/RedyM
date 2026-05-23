@@ -8,6 +8,13 @@ const bcrypt = require("bcryptjs");
 const { cloudinary } = require("../config/cloudinary");
 const saltRounds = 10;
 
+const CreditoUsuario = require("../models/creditoUsuariosModel");
+const RedNiveles = require("../models/redNivelesModel");
+const Membresia = require("../models/membresiaModel");
+const Publicacion = require("../models/publicacionesModel");
+const Interaccion = require("../models/InteraccionModel");
+const Retiro = require("../models/retiroModel");
+
 // OBTENER TODOS LOS USUARIOS (READ ALL)
 const obtenerUsuarios = async (req, res) => {
     try {
@@ -43,7 +50,7 @@ const obtenerUsuarios = async (req, res) => {
     }
 };
 
-// OBTENER UN USUARIO POR ID (READ ONE)
+// OBTENER UN USUARIO POR ID (READ ONE - ACTUALIZADO PARA ADMIN)
 const obtenerUsuarioPorId = async (req, res) => {
     try {
         const { id } = req.params;
@@ -51,7 +58,30 @@ const obtenerUsuarioPorId = async (req, res) => {
             attributes: { exclude: ['password_hash', 'reset_password_token', 'reset_password_expires'] },
             include: [
                 { model: Rol, as: 'rol', attributes: ['nombre_rol'] },
-                { model: Ciudad, as: 'ciudad', attributes: ['nombre_ciudad'] }
+                { model: Ciudad, as: 'ciudad', attributes: ['nombre_ciudad'] },
+                { model: CreditoUsuario, as: 'credito' },
+                { 
+                    model: RedNiveles, 
+                    as: 'nodoRed',
+                    include: [
+                        { model: Usuario, as: 'padre', attributes: ['nombre'] },
+                        { model: Usuario, as: 'patrocinador', attributes: ['nombre'] }
+                    ]
+                },
+                { 
+                    model: Membresia, 
+                    as: 'membresias',
+                    separate: true,
+                    limit: 10,
+                    order: [['fecha', 'DESC']]
+                },
+                {
+                    model: Publicacion,
+                    as: 'publicaciones',
+                    separate: true,
+                    limit: 5,
+                    order: [['fecha', 'DESC']]
+                }
             ]
         });
 
@@ -59,7 +89,68 @@ const obtenerUsuarioPorId = async (req, res) => {
             return res.status(404).json({ success: false, message: "Usuario no encontrado" });
         }
 
-        res.status(200).json({ success: true, data: usuario });
+        // Obtener conteos adicionales que no queremos traer como arrays completos
+        const totalInteracciones = await Interaccion.count({ where: { id_usuario: id } });
+        const totalPublicaciones = await Publicacion.count({ where: { id_usuario: id } });
+        const membresiasPagadas = await Membresia.count({ where: { id_usuario: id, estado: 'completado' } });
+
+        // Obtener progreso de matriz (conteos por nivel)
+        let matrixConteos = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        let idsPadres = [parseInt(id)];
+        for (let nivel = 1; nivel <= 5; nivel++) {
+            const hijos = await RedNiveles.findAll({
+                where: { 
+                    id_padre: { [Op.in]: idsPadres },
+                    nivel_actual: { [Op.gt]: 0 }
+                },
+                attributes: ['id_usuario']
+            });
+            if (hijos.length === 0) break;
+            matrixConteos[nivel] = hijos.length;
+            idsPadres = hijos.map(h => h.id_usuario);
+        }
+
+        // Resumen de interacciones por tipo
+        const interaccionStats = await Interaccion.findAll({
+            where: { id_usuario: id },
+            attributes: [
+                'tipo',
+                [sequelize.fn('COUNT', sequelize.col('id_interaccion')), 'total']
+            ],
+            group: ['tipo']
+        });
+
+        const data = usuario.toJSON();
+        // Obtener historial de interacciones recientes (últimas 20)
+        const historialInteracciones = await Interaccion.findAll({
+            where: { id_usuario: id },
+            limit: 20,
+            order: [['fecha', 'DESC']],
+            include: [
+                {
+                    model: Publicacion,
+                    as: 'publicacion',
+                    attributes: ['id_publicacion', 'content', 'media'],
+                    include: [
+                        { model: Usuario, as: 'usuario', attributes: ['nombre'] }
+                    ]
+                }
+            ]
+        });
+
+        data.stats = {
+            totalInteracciones,
+            totalPublicaciones,
+            membresiasPagadas,
+            matrixConteos,
+            historialInteracciones,
+            interaccionStats: interaccionStats.reduce((acc, curr) => {
+                acc[curr.tipo] = curr.get('total');
+                return acc;
+            }, {})
+        };
+
+        res.status(200).json({ success: true, data });
     } catch (error) {
         console.error("Error al obtener usuario:", error);
         res.status(500).json({ success: false, message: "Error al obtener usuario", error: error.message });
