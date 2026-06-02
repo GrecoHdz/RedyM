@@ -333,7 +333,7 @@ const obtenerProgresoMembresia = async (req, res) => {
                 raw: true
             }),
             Config.findOne({
-                where: { tipo_config: 'reset_credito' },
+                where: { tipo_config: 'dias_gracia_membresia' },
                 raw: true
             })
         ]);

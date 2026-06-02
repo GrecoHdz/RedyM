@@ -18,7 +18,7 @@ const Retiro = require("../models/retiroModel");
 // OBTENER TODOS LOS USUARIOS (READ ALL)
 const obtenerUsuarios = async (req, res) => {
     try {
-        const { estado, rol, id_ciudad, verificado, tieneIdentidad } = req.query;
+        const { estado, rol, id_ciudad, verificado, tieneIdentidad, limit, offset, search } = req.query;
         const whereCondition = {};
 
         if (estado) whereCondition.estado = estado;
@@ -28,20 +28,32 @@ const obtenerUsuarios = async (req, res) => {
         if (tieneIdentidad === 'true') {
             whereCondition.identidad_url = { [Op.ne]: null };
         }
+        if (search) {
+            whereCondition[Op.or] = [
+                { nombre: { [Op.like]: `%${search}%` } },
+                { identidad: { [Op.like]: `%${search}%` } }
+            ];
+        }
 
-        const usuarios = await Usuario.findAll({
+        const options = {
             where: whereCondition,
             attributes: { exclude: ['password_hash', 'reset_password_token', 'reset_password_expires'] },
             include: [
                 { model: Rol, as: 'rol', attributes: ['nombre_rol'] },
                 { model: Ciudad, as: 'ciudad', attributes: ['nombre_ciudad'] }
             ],
-            order: [['id_usuario', 'DESC']]
-        });
+            order: [['fecha_registro', 'DESC']]
+        };
+
+        if (limit) options.limit = parseInt(limit);
+        if (offset) options.offset = parseInt(offset);
+
+        // Se usa findAndCountAll para obtener el total de registros filtrados sin paginar
+        const { count, rows: usuarios } = await Usuario.findAndCountAll(options);
 
         res.status(200).json({
             success: true,
-            count: usuarios.length,
+            count: count,
             data: usuarios
         });
     } catch (error) {
@@ -92,7 +104,12 @@ const obtenerUsuarioPorId = async (req, res) => {
         // Obtener conteos adicionales que no queremos traer como arrays completos
         const totalInteracciones = await Interaccion.count({ where: { id_usuario: id } });
         const totalPublicaciones = await Publicacion.count({ where: { id_usuario: id } });
-        const membresiasPagadas = await Membresia.count({ where: { id_usuario: id, estado: 'completado' } });
+        const membresiasPagadas = await Membresia.count({ 
+            where: { 
+                id_usuario: id, 
+                estado: { [Op.in]: ['activa', 'vencida'] } 
+            } 
+        });
 
         // Obtener progreso de matriz (conteos por nivel)
         let matrixConteos = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };

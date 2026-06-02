@@ -1,12 +1,13 @@
 const express = require("express");
 const router = express.Router();
-const { authMiddleware } = require("../middlewares/authMiddleware");
+const { authMiddleware, checkRole } = require("../middlewares/authMiddleware");
 const {
     getMiRed,
     getHijosDeUsuario,
     getProgresoRed,
     unirseARed,
-    subirNivel
+    subirNivel,
+    actualizarRedCompleta
 } = require("../controllers/redNivelesController");
 
 // Obtener mi red (Dashboard)
@@ -23,5 +24,8 @@ router.post("/unirse", authMiddleware, unirseARed);
 
 // Subir de nivel (Upgrade)
 router.post("/upgrade", authMiddleware, subirNivel);
+
+// Reconstruir y sanar la red de niveles completa (Admin / Super Admin)
+router.post("/rebuild", authMiddleware, checkRole(['admin', 'sa']), actualizarRedCompleta);
 
 module.exports = router;

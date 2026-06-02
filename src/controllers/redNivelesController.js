@@ -41,21 +41,30 @@ const getMiRed = async (req, res) => {
                 order: [['fecha', 'DESC']]
             });
 
-            if (!membresiaReciente || membresiaReciente.estado !== 'activa') {
-                // Si no está activa o está pendiente/vencida, se saca de la matriz
+            if (!membresiaReciente) {
+                // Si no tiene ninguna membresía, se saca de la matriz
                 await RedNiveles.update(
                     { id_padre: null, posicion: null, nivel_actual: 0 },
                     { where: { id_usuario } }
                 );
             } else {
-                // Verificar vencimiento por tiempo (30 días)
+                const Config = require("../models/configModel");
+                const configGracia = await Config.findOne({ where: { tipo_config: 'dias_gracia_membresia' } });
+                const diasGracia = configGracia ? parseInt(configGracia.valor, 10) : 5;
+                const diasPermitidos = 30 + diasGracia;
+
                 const hoy = new Date();
                 const fechaPago = new Date(membresiaReciente.fecha);
                 const diasDiferencia = (hoy - fechaPago) / (1000 * 60 * 60 * 24);
 
-                if (diasDiferencia > 30) {
-                    // Marcar como vencida y sacar de la red
+                if (membresiaReciente.estado === 'activa' && diasDiferencia > 30) {
+                    // Marcar como vencida por tiempo
                     await membresiaReciente.update({ estado: 'vencida' });
+                }
+
+                // Se saca de la matriz físicamente si excede el límite de días permitidos (30 + gracia)
+                // o si la membresía está rechazada/pendiente de pago inicial
+                if (diasDiferencia > diasPermitidos || membresiaReciente.estado === 'rechazada' || membresiaReciente.estado === 'pendiente') {
                     await RedNiveles.update(
                         { id_padre: null, posicion: null, nivel_actual: 0 },
                         { where: { id_usuario } }
@@ -84,7 +93,7 @@ const getMiRed = async (req, res) => {
             where: { id_usuario: id_usuario },
             include: [
                 { model: Usuario, as: 'usuario', attributes: ['nombre', 'imagen_url'] },
-                { model: Usuario, as: 'padre', attributes: ['nombre'] },
+                { model: Usuario, as: 'padre', attributes: ['id_usuario', 'nombre', 'imagen_url'] },
                 { model: Usuario, as: 'patrocinador', attributes: ['nombre'] }
             ]
         });
@@ -106,7 +115,7 @@ const getMiRed = async (req, res) => {
                 where: { id_usuario },
                 include: [
                     { model: Usuario, as: 'usuario', attributes: ['nombre', 'imagen_url'] },
-                    { model: Usuario, as: 'padre', attributes: ['nombre'] },
+                    { model: Usuario, as: 'padre', attributes: ['id_usuario', 'nombre', 'imagen_url'] },
                     { model: Usuario, as: 'patrocinador', attributes: ['nombre'] }
                 ]
             });
@@ -184,14 +193,17 @@ const getHijosDeUsuario = async (req, res) => {
 /**
  * Función interna para encontrar la primera posición libre en la matriz 3x5 (Derrame)
  */
-async function encontrarPosicionSiguiente(id_raiz) {
+async function encontrarPosicionSiguiente(id_raiz, transaction = null) {
     let cola = [id_raiz];
     let nivelActual = 1;
 
     while (cola.length > 0 && nivelActual <= MAX_LEVELS) {
         let siguienteCola = [];
         for (let id_padre of cola) {
-            const hijos = await RedNiveles.findAll({ where: { id_padre } });
+            const hijos = await RedNiveles.findAll({ 
+                where: { id_padre },
+                transaction
+            });
             
             if (hijos.length < MATRIX_WIDTH) {
                 // Determinar cual posición (1, 2 o 3) está libre
@@ -398,13 +410,23 @@ const getProgresoRed = async (req, res) => {
                 order: [['fecha', 'DESC']]
             });
 
-            if (!m || m.estado !== 'activa') {
+            if (!m) {
                 await RedNiveles.update({ id_padre: null, posicion: null, nivel_actual: 0 }, { where: { id_usuario } });
             } else {
+                const Config = require("../models/configModel");
+                const configGracia = await Config.findOne({ where: { tipo_config: 'dias_gracia_membresia' } });
+                const diasGracia = configGracia ? parseInt(configGracia.valor, 10) : 5;
+                const diasPermitidos = 30 + diasGracia;
+
                 const hoy = new Date();
                 const fechaM = new Date(m.fecha);
-                if ((hoy - fechaM) / (1000 * 60 * 60 * 24) > 30) {
+                const diasDiferencia = (hoy - fechaM) / (1000 * 60 * 60 * 24);
+
+                if (m.estado === 'activa' && diasDiferencia > 30) {
                     await m.update({ estado: 'vencida' });
+                }
+
+                if (diasDiferencia > diasPermitidos || m.estado === 'rechazada' || m.estado === 'pendiente') {
                     await RedNiveles.update({ id_padre: null, posicion: null, nivel_actual: 0 }, { where: { id_usuario } });
                 }
             }
@@ -587,6 +609,191 @@ const procesarAutoUpgradeInterno = async (id_usuario, t_existente = null) => {
     }
 };
 
+/**
+ * Reconstrucción completa de la red (sanación)
+ * Reevalúa todas las membresías, saca de la red a los inactivos
+ * y re-coloca secuencialmente a los activos según derrame de sus patrocinadores activos o la raíz.
+ */
+const actualizarRedCompleta = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const rootId = await getRootUserId();
+
+        // 1. Obtener todos los usuarios registrados
+        const usuarios = await Usuario.findAll({
+            order: [['id_usuario', 'ASC']],
+            transaction: t
+        });
+
+        // 2. Obtener configuración de días de gracia
+        const Config = require("../models/configModel");
+        const configGracia = await Config.findOne({ 
+            where: { tipo_config: 'dias_gracia_membresia' },
+            transaction: t
+        });
+        const diasGracia = configGracia ? parseInt(configGracia.valor, 10) : 5;
+        const diasPermitidos = 30 + diasGracia;
+        const hoy = new Date();
+
+        // Mapa para controlar la vigencia del usuario en la red
+        const usuarioActivoMap = {};
+        
+        // La cuenta raíz siempre está activa
+        usuarioActivoMap[rootId] = true;
+
+        const Membresia = require("../models/membresiaModel");
+
+        // 3. Evaluar membresías
+        for (const usuario of usuarios) {
+            const id_usuario = usuario.id_usuario;
+            if (id_usuario === rootId) continue;
+
+            // Si el estado del usuario es inactivo o deshabilitado, se saca de la red
+            if (usuario.estado !== 'activo') {
+                usuarioActivoMap[id_usuario] = false;
+                continue;
+            }
+
+            const membresiaReciente = await Membresia.findOne({
+                where: { id_usuario },
+                order: [['fecha', 'DESC']],
+                transaction: t
+            });
+
+            let activo = false;
+
+            if (membresiaReciente) {
+                const fechaPago = new Date(membresiaReciente.fecha);
+                const diasDiferencia = (hoy - fechaPago) / (1000 * 60 * 60 * 24);
+
+                if (membresiaReciente.estado === 'activa' && diasDiferencia > 30) {
+                    await membresiaReciente.update({ estado: 'vencida' }, { transaction: t });
+                }
+
+                // Considerar activo si está dentro de días permitidos (30 + gracia) y no está rechazada ni pendiente
+                if (diasDiferencia <= diasPermitidos && membresiaReciente.estado !== 'rechazada' && membresiaReciente.estado !== 'pendiente') {
+                    activo = true;
+                }
+            }
+
+            usuarioActivoMap[id_usuario] = activo;
+        }
+
+        // 3b. Calcular la próxima fecha de vencimiento entre todos los usuarios activos en red
+        // Buscamos la membresía activa más antigua (la que vence primero)
+        let proximaFechaVencimiento = null;
+        for (const usuario of usuarios) {
+            const id_usuario = usuario.id_usuario;
+            if (id_usuario === rootId) continue;
+            if (!usuarioActivoMap[id_usuario]) continue;
+
+            const membresiaReciente = await Membresia.findOne({
+                where: { id_usuario },
+                order: [['fecha', 'DESC']],
+                transaction: t
+            });
+
+            if (membresiaReciente) {
+                const fechaPago = new Date(membresiaReciente.fecha);
+                const fechaVencimiento = new Date(fechaPago.getTime() + diasPermitidos * 24 * 60 * 60 * 1000);
+
+                if (!proximaFechaVencimiento || fechaVencimiento < proximaFechaVencimiento) {
+                    proximaFechaVencimiento = fechaVencimiento;
+                }
+            }
+        }
+
+        // 4. Limpiar padres y posiciones de todos los usuarios excepto root
+        // Esto permite reconstruir la red libre de colisiones o referencias antiguas rotas
+        await RedNiveles.update(
+            { id_padre: null, posicion: null },
+            { 
+                where: { 
+                    id_usuario: { [Op.ne]: rootId } 
+                },
+                transaction: t 
+            }
+        );
+
+        // 5. Asegurar existencia de registros en RedNiveles y desactivar los que corresponden
+        for (const usuario of usuarios) {
+            const id_usuario = usuario.id_usuario;
+            if (id_usuario === rootId) continue;
+
+            const activo = usuarioActivoMap[id_usuario];
+            
+            let nodo = await RedNiveles.findOne({ where: { id_usuario }, transaction: t });
+            if (!nodo) {
+                const patrocinadorId = usuario.id_patrocinador || rootId;
+                nodo = await RedNiveles.create({
+                    id_usuario,
+                    id_patrocinador: patrocinadorId,
+                    nivel_actual: 0,
+                    id_padre: null,
+                    posicion: null
+                }, { transaction: t });
+            }
+
+            if (!activo) {
+                await nodo.update({ nivel_actual: 0, id_padre: null, posicion: null }, { transaction: t });
+            }
+        }
+
+        // 6. Colocar de forma secuencial y en orden (por id_usuario ASC) a los usuarios activos
+        for (const usuario of usuarios) {
+            const id_usuario = usuario.id_usuario;
+            if (id_usuario === rootId) continue;
+
+            if (usuarioActivoMap[id_usuario]) {
+                const nodo = await RedNiveles.findOne({ where: { id_usuario }, transaction: t });
+                let id_patrocinador = nodo ? nodo.id_patrocinador : rootId;
+
+                // Subir en la línea de patrocinio si el patrocinador actual no está activo
+                let sponsorNodo = await RedNiveles.findOne({ where: { id_usuario: id_patrocinador }, transaction: t });
+                
+                let startNodeId = id_patrocinador;
+                if (id_patrocinador !== rootId && (!sponsorNodo || sponsorNodo.id_padre === null)) {
+                    let auxPatrocinador = id_patrocinador;
+                    let auxNodo = sponsorNodo;
+                    while (auxPatrocinador !== rootId && (!auxNodo || auxNodo.id_padre === null)) {
+                        auxPatrocinador = auxNodo ? auxNodo.id_patrocinador : rootId;
+                        auxNodo = await RedNiveles.findOne({ where: { id_usuario: auxPatrocinador }, transaction: t });
+                    }
+                    startNodeId = auxPatrocinador;
+                }
+
+                // Encontrar espacio libre usando spillover
+                let lugar = await encontrarPosicionSiguiente(startNodeId, t);
+                if (!lugar) {
+                    lugar = await encontrarPosicionSiguiente(rootId, t);
+                }
+
+                if (lugar) {
+                    const nuevoNivel = (nodo && nodo.nivel_actual > 0) ? nodo.nivel_actual : 1;
+                    await nodo.update({
+                        id_padre: lugar.id_padre,
+                        posicion: lugar.posicion,
+                        nivel_actual: nuevoNivel
+                    }, { transaction: t });
+                } else {
+                    console.error(`[actualizarRedCompleta] Sin espacio disponible en la matriz para el usuario ${id_usuario}`);
+                }
+            }
+        }
+
+        await t.commit();
+        res.json({
+            success: true,
+            message: "Red de niveles reconstruida y sanada con éxito",
+            proximaFechaVencimiento: proximaFechaVencimiento ? proximaFechaVencimiento.toISOString() : null
+        });
+    } catch (error) {
+        await t.rollback();
+        console.error("Error al actualizar red completa:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 module.exports = {
     getMiRed,
     getHijosDeUsuario,
@@ -594,5 +801,6 @@ module.exports = {
     unirseARed,
     subirNivel,
     procesarAutoUpgradeInterno,
-    encontrarPosicionSiguiente
+    encontrarPosicionSiguiente,
+    actualizarRedCompleta
 };
