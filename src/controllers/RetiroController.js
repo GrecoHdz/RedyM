@@ -61,7 +61,7 @@ const obtenerRetirosUsuario = async (req, res) => {
 const obtenerTodosLosRetiros = async (req, res) => {
     try {
         const retiros = await Retiro.findAll({
-            include: [{ model: Usuario, as: 'usuario', attributes: ['nombre', 'email', 'telefono'] }],
+            include: [{ model: Usuario, as: 'usuario', attributes: ['nombre', 'email', 'telefono', 'imagen_url'] }],
             order: [['fecha', 'DESC']]
         });
         res.json({ success: true, data: retiros });

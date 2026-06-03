@@ -1,9 +1,11 @@
+const { Op } = require("sequelize");
 const Interaccion = require("../models/InteraccionModel");
 const Publicacion = require("../models/publicacionesModel");
 const Usuario = require("../models/usuariosModel");
 const Config = require("../models/configModel");
 const CreditoUsuario = require("../models/creditoUsuariosModel");
 const Membresia = require("../models/membresiaModel");
+const RedNiveles = require("../models/redNivelesModel");
 
 const registrarInteraccion = async (req, res) => {
     try {
@@ -201,6 +203,8 @@ const obtenerInteracciones = async (req, res) => {
 const obtenerInteraccionesPorUsuario = async (req, res) => {
     try {
         const { id_usuario } = req.params;
+        
+        // 1. Obtener interacciones tradicionales (likes, views, etc.)
         const interacciones = await Interaccion.findAll({
             where: { id_usuario },
             include: [
@@ -217,9 +221,66 @@ const obtenerInteraccionesPorUsuario = async (req, res) => {
                     ]
                 }
             ],
-            order: [['fecha', 'DESC']]
+            raw: true,
+            nest: true
         });
-        res.json({ success: true, data: interacciones });
+
+        // Formatear interacciones tradicionales
+        const histInteracciones = interacciones.map(item => ({
+            id_unico: `int_${item.id_interaccion}`,
+            tipo: item.tipo,
+            descripcion: item.publicacion?.content || 'Interacción publicitaria',
+            anunciante: item.publicacion?.usuario?.nombre || 'Anunciante',
+            fecha: item.fecha,
+            monto_ganado: parseFloat(item.monto_ganado || 0),
+            media: item.publicacion?.media || null,
+            publicacion: item.publicacion // Mantenemos el objeto original para el parser de multimedia de la UI
+        }));
+
+        // 2. Obtener las membresías aprobadas donde este usuario haya cobrado comisión por invitación/derrame
+        // En aprobarMembresia, cuando se activa el invitado de un patrocinador, este recibe membresia.monto.
+        // Buscamos los usuarios patrocinados por este usuario
+        const patrocinados = await RedNiveles.findAll({
+            where: { id_patrocinador: id_usuario },
+            attributes: ['id_usuario']
+        });
+        const idsPatrocinados = patrocinados.map(p => p.id_usuario);
+
+        let comisionesMembresia = [];
+        if (idsPatrocinados.length > 0) {
+            const membresiasGanadas = await Membresia.findAll({
+                where: {
+                    id_usuario: { [Op.in]: idsPatrocinados },
+                    estado: 'activa'
+                },
+                include: [
+                    {
+                        model: Usuario,
+                        as: 'usuario',
+                        attributes: ['nombre']
+                    }
+                ],
+                raw: true,
+                nest: true
+            });
+
+            comisionesMembresia = membresiasGanadas.map(m => ({
+                id_unico: `memb_${m.id_membresia}`,
+                tipo: 'comision_red',
+                descripcion: `Comisión por activación de referido`,
+                anunciante: m.usuario?.nombre || 'Referido',
+                fecha: m.fecha,
+                monto_ganado: parseFloat(m.monto),
+                media: null
+            }));
+        }
+
+        // Combinar ambas listas y ordenar cronológicamente de forma descendente (más recientes primero)
+        const historialCompleto = [...histInteracciones, ...comisionesMembresia].sort(
+            (a, b) => new Date(b.fecha) - new Date(a.fecha)
+        );
+
+        res.json({ success: true, data: historialCompleto });
     } catch (error) {
         console.error("Error al obtener interacciones por usuario:", error);
         res.status(500).json({ success: false, message: "Error al obtener historial" });

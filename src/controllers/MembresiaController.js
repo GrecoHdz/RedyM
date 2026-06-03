@@ -75,7 +75,7 @@ const obtenerMembresias = async (req, res) => {
                     {
                         model: Usuario,
                         as: 'usuario',
-                        attributes: ['id_usuario', 'nombre', 'telefono']
+                        attributes: ['id_usuario', 'nombre', 'telefono', 'imagen_url']
                     },
                     {
                         model: Usuario,
@@ -173,7 +173,7 @@ const obtenerMembresiaPorId = async (req, res) => {
                     {
                         model: Usuario,
                         as: 'usuario',
-                        attributes: ['id_usuario', 'nombre', 'telefono']
+                        attributes: ['id_usuario', 'nombre', 'telefono', 'imagen_url']
                     },
                     {
                         model: Cuenta,

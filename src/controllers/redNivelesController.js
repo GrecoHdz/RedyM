@@ -57,8 +57,8 @@ const getMiRed = async (req, res) => {
                 const fechaPago = new Date(membresiaReciente.fecha);
                 const diasDiferencia = (hoy - fechaPago) / (1000 * 60 * 60 * 24);
 
-                if (membresiaReciente.estado === 'activa' && diasDiferencia > 30) {
-                    // Marcar como vencida por tiempo
+                if (membresiaReciente.estado === 'activa' && diasDiferencia > diasPermitidos) {
+                    // Marcar como vencida por tiempo después del periodo de gracia
                     await membresiaReciente.update({ estado: 'vencida' });
                 }
 
@@ -422,7 +422,7 @@ const getProgresoRed = async (req, res) => {
                 const fechaM = new Date(m.fecha);
                 const diasDiferencia = (hoy - fechaM) / (1000 * 60 * 60 * 24);
 
-                if (m.estado === 'activa' && diasDiferencia > 30) {
+                if (m.estado === 'activa' && diasDiferencia > diasPermitidos) {
                     await m.update({ estado: 'vencida' });
                 }
 
@@ -666,7 +666,7 @@ const actualizarRedCompleta = async (req, res) => {
                 const fechaPago = new Date(membresiaReciente.fecha);
                 const diasDiferencia = (hoy - fechaPago) / (1000 * 60 * 60 * 24);
 
-                if (membresiaReciente.estado === 'activa' && diasDiferencia > 30) {
+                if (membresiaReciente.estado === 'activa' && diasDiferencia > diasPermitidos) {
                     await membresiaReciente.update({ estado: 'vencida' }, { transaction: t });
                 }
 
