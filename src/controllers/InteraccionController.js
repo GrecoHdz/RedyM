@@ -19,8 +19,8 @@ const registrarInteraccion = async (req, res) => {
         const configs = await Config.findAll({
             where: {
                 tipo_config: [
-                    'valor_like', 
-                    'valor_video', 
+                    'valor_like',
+                    'valor_video',
                     'valor_encuesta',
                     'valor_visita_web',
                     'valor_visita_whatsapp',
@@ -49,34 +49,34 @@ const registrarInteraccion = async (req, res) => {
             });
 
             if (existeLike) {
-                 // Si ya existe, lo quitamos (Toggle like behavior)
-                 const montoARestar = parseFloat(existeLike.monto_ganado || 0);
-                 await existeLike.destroy();
-                 
-                 const pub = await Publicacion.findByPk(id_publicacion);
-                 if (pub) {
-                     await pub.decrement('likes');
-                     if (pub.total_interacciones > 0) await pub.decrement('total_interacciones');
-                     const costoInteraccion = montoARestar * 2;
-                     const presupuestoActual = parseFloat(pub.presupuesto_restante || 0);
-                     const presupuestoMax = parseFloat(pub.presupuesto || 0);
-                     await pub.update({ 
-                         presupuesto_restante: Math.min(presupuestoMax, presupuestoActual + costoInteraccion).toFixed(2),
-                         estado: 'activa'
-                     });
-                 }
+                // Si ya existe, lo quitamos (Toggle like behavior)
+                const montoARestar = parseFloat(existeLike.monto_ganado || 0);
+                await existeLike.destroy();
 
-                 const creditoExistente = await CreditoUsuario.findOne({ where: { id_usuario } });
-                 if (creditoExistente) {
-                     const nuevoMonto = parseFloat(creditoExistente.monto_credito) - montoARestar;
-                     await CreditoUsuario.upsert({
-                         id_usuario,
-                         monto_credito: Math.max(0, nuevoMonto).toFixed(2),
-                         fecha: new Date()
-                     });
-                 }
+                const pub = await Publicacion.findByPk(id_publicacion);
+                if (pub) {
+                    await pub.decrement('likes');
+                    if (pub.total_interacciones > 0) await pub.decrement('total_interacciones');
+                    const costoInteraccion = montoARestar * 2;
+                    const presupuestoActual = parseFloat(pub.presupuesto_restante || 0);
+                    const presupuestoMax = parseFloat(pub.presupuesto || 0);
+                    await pub.update({
+                        presupuesto_restante: Math.min(presupuestoMax, presupuestoActual + costoInteraccion).toFixed(2),
+                        estado: 'activa'
+                    });
+                }
 
-                 return res.json({ success: true, message: "Like retirado", action: 'unliked' });
+                const creditoExistente = await CreditoUsuario.findOne({ where: { id_usuario } });
+                if (creditoExistente) {
+                    const nuevoMonto = parseFloat(creditoExistente.monto_credito) - montoARestar;
+                    await CreditoUsuario.upsert({
+                        id_usuario,
+                        monto_credito: Math.max(0, nuevoMonto).toFixed(2),
+                        fecha: new Date()
+                    });
+                }
+
+                return res.json({ success: true, message: "Like retirado", action: 'unliked' });
             }
         } else {
             // Para cualquier otro tipo de interacción, solo permitimos UNA por usuario/publicación
@@ -85,10 +85,10 @@ const registrarInteraccion = async (req, res) => {
             });
 
             if (existeInteraccion) {
-                return res.status(400).json({ 
-                    success: false, 
+                return res.status(400).json({
+                    success: false,
                     message: `Ya has realizado esta interacción (${tipo}) en esta publicación anteriormente.`,
-                    already_done: true 
+                    already_done: true
                 });
             }
         }
@@ -149,7 +149,7 @@ const registrarInteraccion = async (req, res) => {
 
                 if (nuevoPresupuesto <= 0) {
                     // Presupuesto agotado: marcar publicación como finalizada/borrada
-                    await pub.update({ 
+                    await pub.update({
                         presupuesto_restante: 0,
                         estado: 'borrada',
                         fecha_finalizacion: new Date()
@@ -167,7 +167,7 @@ const registrarInteraccion = async (req, res) => {
             if (creditoExistente) {
                 montoFinal += parseFloat(creditoExistente.monto_credito);
             }
-            
+
             await CreditoUsuario.upsert({
                 id_usuario,
                 monto_credito: parseFloat(montoFinal.toFixed(2)),
@@ -203,7 +203,7 @@ const obtenerInteracciones = async (req, res) => {
 const obtenerInteraccionesPorUsuario = async (req, res) => {
     try {
         const { id_usuario } = req.params;
-        
+
         // 1. Obtener interacciones tradicionales (likes, views, etc.)
         const interacciones = await Interaccion.findAll({
             where: { id_usuario },
@@ -236,10 +236,7 @@ const obtenerInteraccionesPorUsuario = async (req, res) => {
             media: item.publicacion?.media || null,
             publicacion: item.publicacion // Mantenemos el objeto original para el parser de multimedia de la UI
         }));
-
         // 2. Obtener las membresías aprobadas donde este usuario haya cobrado comisión por invitación/derrame
-        // En aprobarMembresia, cuando se activa el invitado de un patrocinador, este recibe membresia.monto.
-        // Buscamos los usuarios patrocinados por este usuario
         const patrocinados = await RedNiveles.findAll({
             where: { id_patrocinador: id_usuario },
             attributes: ['id_usuario']
@@ -267,7 +264,7 @@ const obtenerInteraccionesPorUsuario = async (req, res) => {
             comisionesMembresia = membresiasGanadas.map(m => ({
                 id_unico: `memb_${m.id_membresia}`,
                 tipo: 'comision_red',
-                descripcion: `Comisión por activación de referido`,
+                descripcion: `Comisión por referido directo`,
                 anunciante: m.usuario?.nombre || 'Referido',
                 fecha: m.fecha,
                 monto_ganado: parseFloat(m.monto),
@@ -275,8 +272,60 @@ const obtenerInteraccionesPorUsuario = async (req, res) => {
             }));
         }
 
-        // Combinar ambas listas y ordenar cronológicamente de forma descendente (más recientes primero)
-        const historialCompleto = [...histInteracciones, ...comisionesMembresia].sort(
+        // 3. Obtener comisiones de red por upgrades de niveles 2 a 5 mediante BFS
+        let comisionesRedUpgrades = [];
+        let idsPadresNivel = [parseInt(id_usuario)];
+        const configsNiveles = await Config.findAll({
+            where: {
+                tipo_config: ['nivel2_costo', 'nivel3_costo', 'nivel4_costo', 'nivel5_costo']
+            }
+        });
+        const levelCosts = {
+            2: parseFloat(configsNiveles.find(c => c.tipo_config === 'nivel2_costo')?.valor || 40.00),
+            3: parseFloat(configsNiveles.find(c => c.tipo_config === 'nivel3_costo')?.valor || 160.00),
+            4: parseFloat(configsNiveles.find(c => c.tipo_config === 'nivel4_costo')?.valor || 320.00),
+            5: parseFloat(configsNiveles.find(c => c.tipo_config === 'nivel5_costo')?.valor || 640.00)
+        };
+
+        for (let nivel = 1; nivel <= 5; nivel++) {
+            const hijos = await RedNiveles.findAll({
+                where: {
+                    id_padre: { [Op.in]: idsPadresNivel },
+                    nivel_actual: { [Op.gt]: 0 }
+                },
+                include: [
+                    {
+                        model: Usuario,
+                        as: 'usuario',
+                        attributes: ['nombre']
+                    }
+                ],
+                raw: true,
+                nest: true
+            });
+
+            if (hijos.length === 0) break;
+
+            if (nivel >= 2) {
+                const calificados = hijos.filter(h => h.nivel_actual >= nivel);
+                for (const h of calificados) {
+                    comisionesRedUpgrades.push({
+                        id_unico: `upgr_${h.id_usuario}_l${nivel}`,
+                        tipo: 'comision_red',
+                        descripcion: `Comisión por upgrade a Nivel ${nivel}`,
+                        anunciante: h.usuario?.nombre || 'Miembro de Red',
+                        fecha: h.updatedAt || new Date(),
+                        monto_ganado: levelCosts[nivel],
+                        media: null
+                    });
+                }
+            }
+
+            idsPadresNivel = hijos.map(h => h.id_usuario);
+        }
+
+        // Combinar todas las listas y ordenar cronológicamente de forma descendente
+        const historialCompleto = [...histInteracciones, ...comisionesMembresia, ...comisionesRedUpgrades].sort(
             (a, b) => new Date(b.fecha) - new Date(a.fecha)
         );
 

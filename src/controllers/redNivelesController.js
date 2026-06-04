@@ -432,8 +432,11 @@ const getProgresoRed = async (req, res) => {
             }
         }
         
-        // Estructura inicial del progreso
+        // Estructura inicial del progreso y cobrados
         let progreso = {
+            1: 0, 2: 0, 3: 0, 4: 0, 5: 0
+        };
+        let pagados = {
             1: 0, 2: 0, 3: 0, 4: 0, 5: 0
         };
 
@@ -446,12 +449,22 @@ const getProgresoRed = async (req, res) => {
                     id_padre: { [Op.in]: idsPadres },
                     nivel_actual: { [Op.gt]: 0 } // Solo contar los activos en la matriz
                 },
-                attributes: ['id_usuario']
+                attributes: ['id_usuario', 'nivel_actual', 'id_patrocinador']
             });
             
             if (hijos.length === 0) break;
             
             progreso[nivel] = hijos.length;
+
+            // Calcular cuántos de estos hijos ya generaron cobro para este nivel
+            if (nivel === 1) {
+                // En el nivel 1 solo gana de los que son sus patrocinados directos
+                pagados[1] = hijos.filter(h => h.id_patrocinador === parseInt(id_usuario)).length;
+            } else {
+                // En niveles 2 a 5 gana de los que tienen nivel_actual >= nivel
+                pagados[nivel] = hijos.filter(h => h.nivel_actual >= nivel).length;
+            }
+            
             idsPadres = hijos.map(h => h.id_usuario);
         }
 
@@ -472,6 +485,7 @@ const getProgresoRed = async (req, res) => {
             success: true, 
             data: {
                 conteos: progreso,
+                pagados: pagados,
                 mi_nivel: miNodo ? miNodo.nivel_actual : 0
             } 
         });
