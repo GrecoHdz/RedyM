@@ -9,7 +9,8 @@ const {
     obtenerPublicacionesPendientes,
     aprobarPago,
     rechazarPago,
-    eliminarPublicacion 
+    eliminarPublicacion,
+    incrementarVista
 } = require("../controllers/PublicacionController");
 const { uploadPost } = require("../config/cloudinary");
 
@@ -31,6 +32,9 @@ router.post("/", authMiddleware, uploadPost.array('media', 5), crearPublicacion)
 
 // REGISTRAR PAGO (cliente envía N° comprobante)
 router.post("/:id_publicacion/pago", authMiddleware, registrarPago);
+
+// INCREMENTAR VISTA
+router.post("/:id_publicacion/vista", incrementarVista);
 
 // ELIMINAR PUBLICACIÓN
 router.delete("/:id", authMiddleware, eliminarPublicacion);

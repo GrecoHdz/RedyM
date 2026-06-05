@@ -258,6 +258,21 @@ const eliminarPublicacion = async (req, res) => {
     }
 };
 
+const incrementarVista = async (req, res) => {
+    try {
+        const { id_publicacion } = req.params;
+        const pub = await Publicacion.findByPk(id_publicacion);
+        if (!pub) {
+            return res.status(404).json({ success: false, message: "Publicación no encontrada" });
+        }
+        await pub.increment('vistas');
+        res.json({ success: true, message: "Vista incrementada", vistas: pub.vistas + 1 });
+    } catch (error) {
+        console.error("Error al incrementar vista:", error);
+        res.status(500).json({ success: false, message: "Error al incrementar vista" });
+    }
+};
+
 module.exports = {
     crearPublicacion,
     registrarPago,
@@ -266,5 +281,7 @@ module.exports = {
     obtenerPublicacionesPendientes,
     aprobarPago,
     rechazarPago,
-    eliminarPublicacion
+    eliminarPublicacion,
+    incrementarVista
 };
+
