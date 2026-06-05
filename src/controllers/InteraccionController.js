@@ -329,7 +329,12 @@ const obtenerInteraccionesPorUsuario = async (req, res) => {
             (a, b) => new Date(b.fecha) - new Date(a.fecha)
         );
 
-        res.json({ success: true, data: historialCompleto });
+        const limit = parseInt(req.query.limit) || 5;
+        const offset = parseInt(req.query.offset) || 0;
+        
+        const paginatedHistory = historialCompleto.slice(offset, offset + limit);
+
+        res.json({ success: true, data: paginatedHistory, total: historialCompleto.length });
     } catch (error) {
         console.error("Error al obtener interacciones por usuario:", error);
         res.status(500).json({ success: false, message: "Error al obtener historial" });
