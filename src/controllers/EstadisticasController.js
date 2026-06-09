@@ -11,6 +11,18 @@ const RedNiveles = require("../models/redNivelesModel");
 const Rol = require("../models/rolesModel");
 const Config = require("../models/configModel");
 
+// Función auxiliar para extraer edad desde el DNI
+const obtenerEdadDesdeIdentidad = (identidad) => {
+    if (!identidad) return null;
+    const idLimpia = identidad.replace(/-/g, '');
+    if (idLimpia.length < 8) return null;
+    const anioStr = idLimpia.substring(4, 8);
+    const anioNacimiento = parseInt(anioStr);
+    if (isNaN(anioNacimiento)) return null;
+    const anioActual = new Date().getFullYear();
+    return anioActual - anioNacimiento;
+};
+
 /**
  * Obtener estadísticas globales para administradores
  */
@@ -201,7 +213,8 @@ const getGlobalStats = async (req, res) => {
             ingresosMensuales,
             crecimientoUsuarios,
             crecimientoPublicaciones,
-            distribucionCiudades
+            distribucionCiudades,
+            todosUsuarios
         ] = await Promise.all([
             // Ingresos mensuales (últimos 6 meses)
             Membresia.findAll({
@@ -218,23 +231,23 @@ const getGlobalStats = async (req, res) => {
             // Crecimiento usuarios (diario en el rango seleccionado)
             Usuario.findAll({
                 attributes: [
-                    [fn('DATE', col('fecha_registro')), 'fecha'],
+                    [fn('DATE_FORMAT', col('fecha_registro'), '%Y-%m-%d'), 'fecha'],
                     [fn('COUNT', col('id_usuario')), 'total']
                 ],
                 where: dateFilterUsuario,
-                group: [fn('DATE', col('fecha_registro'))],
-                order: [[fn('DATE', col('fecha_registro')), 'ASC']],
+                group: [fn('DATE_FORMAT', col('fecha_registro'), '%Y-%m-%d')],
+                order: [[fn('DATE_FORMAT', col('fecha_registro'), '%Y-%m-%d'), 'ASC']],
                 raw: true
             }),
             // Crecimiento publicaciones (diario en el rango seleccionado)
             Publicacion.findAll({
                 attributes: [
-                    [fn('DATE', col('fecha')), 'fecha'],
+                    [fn('DATE_FORMAT', col('fecha'), '%Y-%m-%d'), 'fecha'],
                     [fn('COUNT', col('id_publicacion')), 'total']
                 ],
                 where: dateFilter,
-                group: [fn('DATE', col('fecha'))],
-                order: [[fn('DATE', col('fecha')), 'ASC']],
+                group: [fn('DATE_FORMAT', col('fecha'), '%Y-%m-%d')],
+                order: [[fn('DATE_FORMAT', col('fecha'), '%Y-%m-%d'), 'ASC']],
                 raw: true
             }),
             // Distribución por ciudades
@@ -247,8 +260,36 @@ const getGlobalStats = async (req, res) => {
                 group: ['Usuario.id_ciudad', 'ciudad.nombre_ciudad'],
                 raw: true,
                 nest: true
+            }),
+            // Datos para demografía (género y edad)
+            Usuario.findAll({
+                attributes: ['genero', 'identidad'],
+                raw: true
             })
         ]);
+
+        // Procesar demografía de usuarios
+        const demografia = {
+            generos: { masculino: 0, femenino: 0 },
+            edades: { '13-17': 0, '18-24': 0, '25-34': 0, '35-44': 0, '45-54': 0, '55+': 0, 'Desconocido': 0 }
+        };
+
+        todosUsuarios.forEach(u => {
+            // Género
+            const gen = u.genero || 'desconocido';
+            if (demografia.generos[gen] !== undefined) demografia.generos[gen]++;
+            else demografia.generos.desconocido++;
+
+            // Edad
+            const edad = obtenerEdadDesdeIdentidad(u.identidad);
+            if (edad === null) demografia.edades['Desconocido']++;
+            else if (edad < 18) demografia.edades['13-17']++;
+            else if (edad <= 24) demografia.edades['18-24']++;
+            else if (edad <= 34) demografia.edades['25-34']++;
+            else if (edad <= 44) demografia.edades['35-44']++;
+            else if (edad <= 54) demografia.edades['45-54']++;
+            else demografia.edades['55+']++;
+        });
 
         res.json({
             success: true,
@@ -279,7 +320,8 @@ const getGlobalStats = async (req, res) => {
                     ingresosMensuales,
                     crecimientoUsuarios,
                     crecimientoPublicaciones,
-                    distribucionCiudades
+                    distribucionCiudades,
+                    demografia
                 }
             }
         });
