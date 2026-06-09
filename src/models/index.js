@@ -16,6 +16,8 @@ const RedNiveles = require("./redNivelesModel");
 const Membresia = require("./membresiaModel");
 const Retiro = require("./retiroModel");
 const SolicitudUpgrade = require("./solicitudesUpgradeModel");
+const MisionReclamo = require("./MisionReclamoModel");
+const MisionEspecial = require("./MisionEspecialModel");
 
 // Función para configurar las asociaciones
 const setupAssociations = () => {
@@ -171,6 +173,14 @@ const setupAssociations = () => {
   Usuario.hasMany(SolicitudUpgrade, { foreignKey: 'id_usuario', as: 'solicitudesUpgrade' });
   SolicitudUpgrade.belongsTo(Cuenta, { foreignKey: 'id_cuenta', as: 'cuenta' });
   Cuenta.hasMany(SolicitudUpgrade, { foreignKey: 'id_cuenta', as: 'solicitudesUpgrade' });
+
+  // Relaciones de MisionReclamo
+  Usuario.hasMany(MisionReclamo, { foreignKey: 'id_usuario', as: 'misionReclamos', onDelete: 'CASCADE' });
+  MisionReclamo.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
+
+  // Relaciones de MisionEspecial
+  MisionEspecial.hasMany(MisionReclamo, { foreignKey: 'id_mision', as: 'reclamos', onDelete: 'SET NULL' });
+  MisionReclamo.belongsTo(MisionEspecial, { foreignKey: 'id_mision', as: 'mision' });
 
   console.log('Asociaciones de RedYMercadeo configuradas correctamente');
 };

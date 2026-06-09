@@ -21,6 +21,8 @@ const configRoutes = require("./src/routes/ConfigRoute");
 const redNivelesRoutes = require("./src/routes/redNivelesRoute");
 const retiroRoutes = require("./src/routes/RetiroRoute");
 const solicitudesUpgradeRoutes = require("./src/routes/solicitudesUpgradeRoute");
+const misionRoutes = require("./src/routes/MisionRoute");
+const estadisticasRoutes = require("./src/routes/EstadisticasRoute");
 
 // Configurar las asociaciones de los modelos
 const setupAssociations = require('./src/models');
@@ -94,6 +96,8 @@ app.use("/config", configRoutes);
 app.use("/red", redNivelesRoutes);
 app.use("/retiros", retiroRoutes);
 app.use("/red-solicitudes", solicitudesUpgradeRoutes);
+app.use("/misiones", misionRoutes);
+app.use("/estadisticas", estadisticasRoutes);
 
 // Iniciar servidor
 const PORT = process.env.PORT || 4000;

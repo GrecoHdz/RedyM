@@ -10,7 +10,8 @@ const {
     aprobarPago,
     rechazarPago,
     eliminarPublicacion,
-    incrementarVista
+    incrementarVista,
+    obtenerEstadisticasSegmentadas
 } = require("../controllers/PublicacionController");
 const { uploadPost } = require("../config/cloudinary");
 
@@ -35,6 +36,9 @@ router.post("/:id_publicacion/pago", authMiddleware, registrarPago);
 
 // INCREMENTAR VISTA
 router.post("/:id_publicacion/vista", incrementarVista);
+
+// ESTADÍSTICAS SEGMENTADAS
+router.get("/:id_publicacion/stats", authMiddleware, obtenerEstadisticasSegmentadas);
 
 // ELIMINAR PUBLICACIÓN
 router.delete("/:id", authMiddleware, eliminarPublicacion);

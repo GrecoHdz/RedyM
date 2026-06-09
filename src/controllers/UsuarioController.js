@@ -138,9 +138,12 @@ const obtenerUsuarioPorId = async (req, res) => {
         });
 
         const data = usuario.toJSON();
-        // Obtener historial de interacciones recientes (últimas 20)
+        // Obtener historial de interacciones recientes (últimas 20) - EXCLUYENDO VISTAS
         const historialInteracciones = await Interaccion.findAll({
-            where: { id_usuario: id },
+            where: { 
+                id_usuario: id,
+                tipo: { [Op.ne]: 'vista' }
+            },
             limit: 20,
             order: [['fecha', 'DESC']],
             include: [
@@ -176,7 +179,7 @@ const obtenerUsuarioPorId = async (req, res) => {
 
 // CREAR USUARIO (CREATE)
 const crearUsuario = async (req, res) => {
-    const { nombre, identidad, email, telefono, password, id_ciudad, es_tecnico, id_patrocinador } = req.body;
+    const { nombre, identidad, email, telefono, password, id_ciudad, es_tecnico, id_patrocinador, genero } = req.body;
     const t = await sequelize.transaction();
 
     try {
@@ -217,7 +220,8 @@ const crearUsuario = async (req, res) => {
             id_ciudad,
             id_rol: rol.id_rol,
             password_hash: hashedPassword,
-            estado: es_tecnico ? 'deshabilitado' : 'activo'
+            estado: es_tecnico ? 'deshabilitado' : 'activo',
+            genero
         }, { transaction: t });
 
         // Crear registro de crédito inicial
@@ -274,7 +278,11 @@ const crearUsuario = async (req, res) => {
 const actualizarUsuario = async (req, res) => {
     try {
         const { id } = req.params;
-        const { nombre, email, telefono, identidad, id_ciudad, estado, id_rol, password, verificado } = req.body;
+        const { 
+            nombre, email, telefono, identidad, id_ciudad, 
+            estado, id_rol, password, verificado,
+            genero 
+        } = req.body;
 
         const usuario = await Usuario.findByPk(id);
         if (!usuario) {
@@ -287,6 +295,7 @@ const actualizarUsuario = async (req, res) => {
         if (estado) updates.estado = estado;
         if (id_rol) updates.id_rol = id_rol;
         if (verificado !== undefined) updates.verificado = verificado;
+        if (genero) updates.genero = genero;
 
         // Verificar si los datos únicos ya están en uso por OTRO usuario
         const uniqueChecks = [];

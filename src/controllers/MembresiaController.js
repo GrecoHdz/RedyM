@@ -13,7 +13,7 @@ const { sequelize } = require("../config/database");
 const obtenerMembresias = async (req, res) => {
     try {
         // Obtener parámetros de paginación y búsqueda
-        let limit = parseInt(req.query.limit) || 10;
+        let limit = parseInt(req.query.limit) || 100;
         limit = Math.min(limit, 1000); // Máximo 1000 para reportes
         const offset = parseInt(req.query.offset) || 0;
         const searchTerm = req.query.search || '';
@@ -111,7 +111,7 @@ const obtenerMembresias = async (req, res) => {
         // Procesar estadísticas
         const statsData = stats[0] || { activas: 0, pendientes: 0, rechazadas: 0, total: 0 };
         const estadisticas = {
-            aprobados: (parseInt(statsData.activas) || 0) + (parseInt(statsData.vencidas) || 0),
+            aprobados: parseInt(statsData.activas) || 0,
             rechazados: parseInt(statsData.rechazadas) || 0,
             pendientes: parseInt(statsData.pendientes) || 0,
             total: parseFloat(statsData.total) || 0

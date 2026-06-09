@@ -1,21 +1,11 @@
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
-const Interaccion = sequelize.define("Interaccion", {
-    id_interaccion: {
+const MisionReclamo = sequelize.define("MisionReclamo", {
+    id_reclamo: {
         type: DataTypes.INTEGER,
         primaryKey: true,
         autoIncrement: true
-    },
-    id_publicacion: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        references: {
-            model: 'publicacion',
-            key: 'id_publicacion'
-        },
-        onUpdate: 'CASCADE',
-        onDelete: 'CASCADE'
     },
     id_usuario: {
         type: DataTypes.INTEGER,
@@ -27,27 +17,42 @@ const Interaccion = sequelize.define("Interaccion", {
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE'
     },
-    tipo: {
-        type: DataTypes.ENUM('like', 'poll', 'share', 'video_view', 'click', 'visita_web', 'visita_whatsapp', 'vista'),
-        allowNull: false
+    id_mision: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'mision_especial',
+            key: 'id_mision'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL'
     },
-    detalle: {
-        type: DataTypes.TEXT,
-        allowNull: true
+    tipo: {
+        type: DataTypes.ENUM('auto', 'especial'),
+        allowNull: false
     },
     fecha: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: DataTypes.NOW
     },
-    monto_ganado: {
+    estado: {
+        type: DataTypes.ENUM('pendiente', 'aprobado', 'rechazado'),
+        allowNull: false,
+        defaultValue: 'pendiente'
+    },
+    monto: {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
         defaultValue: 0.00
+    },
+    respuesta: {
+        type: DataTypes.TEXT,
+        allowNull: true
     }
 }, {
     timestamps: false,
-    tableName: 'interaccion'
+    tableName: 'mision_reclamo'
 });
 
-module.exports = Interaccion;
+module.exports = MisionReclamo;

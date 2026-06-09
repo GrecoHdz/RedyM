@@ -7,11 +7,15 @@ const {
     getProgresoRed,
     unirseARed,
     subirNivel,
-    actualizarRedCompleta
+    actualizarRedCompleta,
+    getProximoVencimientoRed
 } = require("../controllers/redNivelesController");
 
 // Obtener mi red (Dashboard)
 router.get("/mi-red/:id_usuario", authMiddleware, getMiRed);
+
+// Obtener la próxima fecha de vencimiento global de la red
+router.get("/proximo-vencimiento", authMiddleware, checkRole(['admin', 'sa']), getProximoVencimientoRed);
 
 // Obtener progreso de la agencia (Conteos por nivel)
 router.get("/progreso/:id_usuario", authMiddleware, getProgresoRed);

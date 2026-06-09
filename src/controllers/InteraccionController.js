@@ -6,6 +6,8 @@ const Config = require("../models/configModel");
 const CreditoUsuario = require("../models/creditoUsuariosModel");
 const Membresia = require("../models/membresiaModel");
 const RedNiveles = require("../models/redNivelesModel");
+const MisionReclamo = require("../models/MisionReclamoModel");
+const MisionEspecial = require("../models/MisionEspecialModel");
 
 const registrarInteraccion = async (req, res) => {
     try {
@@ -109,10 +111,15 @@ const registrarInteraccion = async (req, res) => {
             const pub = await Publicacion.findByPk(id_publicacion);
             if (pub && pub.poll_data) {
                 try {
+                    const pollData = typeof pub.poll_data === 'string' ? JSON.parse(pub.poll_data) : pub.poll_data;
                     const parsedDetalle = typeof detalle === 'string' ? JSON.parse(detalle) : detalle;
-                    const correctOption = pub.poll_data.options[pub.poll_data.correct_index];
-                    if (parsedDetalle && parsedDetalle.answer === correctOption) {
-                        recompensa = valorEncuesta * multiplicador;
+                    
+                    if (pollData && pollData.options && pollData.correct_index !== undefined) {
+                        const correctOption = pollData.options[parseInt(pollData.correct_index)];
+                        if (parsedDetalle && parsedDetalle.answer && correctOption && 
+                            parsedDetalle.answer.trim().toLowerCase() === correctOption.trim().toLowerCase()) {
+                            recompensa = valorEncuesta * multiplicador;
+                        }
                     }
                 } catch (e) {
                     console.warn("Error parsing detail for poll reward", e);
@@ -204,9 +211,20 @@ const obtenerInteraccionesPorUsuario = async (req, res) => {
     try {
         const { id_usuario } = req.params;
 
-        // 1. Obtener interacciones tradicionales (likes, views, etc.)
+        // 1. Obtener interacciones tradicionales (likes, views, etc.) - EXCLUYENDO VISTAS Y POLLS FALLIDAS
         const interacciones = await Interaccion.findAll({
-            where: { id_usuario },
+            where: { 
+                id_usuario,
+                [Op.and]: [
+                    { tipo: { [Op.ne]: 'vista' } },
+                    {
+                        [Op.or]: [
+                            { tipo: { [Op.ne]: 'poll' } },
+                            { [Op.and]: [{ tipo: 'poll' }, { monto_ganado: { [Op.gt]: 0 } }] }
+                        ]
+                    }
+                ]
+            },
             include: [
                 {
                     model: Publicacion,
@@ -234,6 +252,7 @@ const obtenerInteraccionesPorUsuario = async (req, res) => {
             fecha: item.fecha,
             monto_ganado: parseFloat(item.monto_ganado || 0),
             media: item.publicacion?.media || null,
+            detalle: item.detalle,
             publicacion: item.publicacion // Mantenemos el objeto original para el parser de multimedia de la UI
         }));
         // 2. Obtener las membresías aprobadas donde este usuario haya cobrado comisión por invitación/derrame
@@ -324,8 +343,37 @@ const obtenerInteraccionesPorUsuario = async (req, res) => {
             idsPadresNivel = hijos.map(h => h.id_usuario);
         }
 
+        // 4. Obtener reclamos de misiones (diarias y especiales) - SOLO APROBADAS
+        const reclamosMisiones = await MisionReclamo.findAll({
+            where: { 
+                id_usuario,
+                estado: 'aprobado'
+            },
+            include: [
+                {
+                    model: MisionEspecial,
+                    as: 'mision',
+                    attributes: ['titulo']
+                }
+            ],
+            raw: true,
+            nest: true
+        });
+
+        const histMisiones = reclamosMisiones.map(m => ({
+            id_unico: `mision_${m.id_reclamo}`,
+            _isMision: true,
+            tipo: m.tipo === 'auto' ? 'mision_auto' : 'mision_especial',
+            descripcion: m.tipo === 'auto' ? 'Misión Diaria' : (m.mision?.titulo || 'Misión Especial'),
+            estado: m.estado,
+            respuesta: m.respuesta,
+            fecha: m.fecha,
+            monto: parseFloat(m.monto || 0),
+            monto_ganado: parseFloat(m.monto || 0)
+        }));
+
         // Combinar todas las listas y ordenar cronológicamente de forma descendente
-        const historialCompleto = [...histInteracciones, ...comisionesMembresia, ...comisionesRedUpgrades].sort(
+        const historialCompleto = [...histInteracciones, ...comisionesMembresia, ...comisionesRedUpgrades, ...histMisiones].sort(
             (a, b) => new Date(b.fecha) - new Date(a.fecha)
         );
 

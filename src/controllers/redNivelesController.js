@@ -808,6 +808,45 @@ const actualizarRedCompleta = async (req, res) => {
     }
 };
 
+/**
+ * Obtener la próxima fecha de vencimiento entre todos los usuarios activos en la red
+ */
+const getProximoVencimientoRed = async (req, res) => {
+    try {
+        const Membresia = require("../models/membresiaModel");
+        const Config = require("../models/configModel");
+        const rootId = await getRootUserId();
+
+        const configGracia = await Config.findOne({ where: { tipo_config: 'dias_gracia_membresia' } });
+        const diasGracia = configGracia ? parseInt(configGracia.valor, 10) : 5;
+        const diasPermitidos = 30 + diasGracia;
+
+        // Buscamos la membresía activa más antigua (la que vence primero)
+        const membresiaMasAntigua = await Membresia.findOne({
+            where: { 
+                estado: 'activa',
+                id_usuario: { [Op.ne]: rootId }
+            },
+            order: [['fecha', 'ASC']],
+            attributes: ['fecha']
+        });
+
+        let proximaFechaVencimiento = null;
+        if (membresiaMasAntigua) {
+            const fechaPago = new Date(membresiaMasAntigua.fecha);
+            proximaFechaVencimiento = new Date(fechaPago.getTime() + diasPermitidos * 24 * 60 * 60 * 1000);
+        }
+
+        res.json({
+            success: true,
+            proximaFechaVencimiento: proximaFechaVencimiento ? proximaFechaVencimiento.toISOString() : null
+        });
+    } catch (error) {
+        console.error("Error al obtener próximo vencimiento:", error);
+        res.status(500).json({ success: false, error: "Error al obtener fecha de vencimiento" });
+    }
+};
+
 module.exports = {
     getMiRed,
     getHijosDeUsuario,
@@ -816,5 +855,6 @@ module.exports = {
     subirNivel,
     procesarAutoUpgradeInterno,
     encontrarPosicionSiguiente,
-    actualizarRedCompleta
+    actualizarRedCompleta,
+    getProximoVencimientoRed
 };

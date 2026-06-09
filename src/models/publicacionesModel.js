@@ -117,6 +117,26 @@ const Publicacion = sequelize.define("Publicacion", {
     total_interacciones: {
         type: DataTypes.INTEGER,
         defaultValue: 0
+    },
+    target_id_ciudad: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'ciudad',
+            key: 'id_ciudad'
+        }
+    },
+    target_genero: {
+        type: DataTypes.ENUM('todos', 'masculino', 'femenino', 'otro'),
+        defaultValue: 'todos'
+    },
+    target_edad_min: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
+    target_edad_max: {
+        type: DataTypes.INTEGER,
+        allowNull: true
     }
 }, {
     timestamps: false,

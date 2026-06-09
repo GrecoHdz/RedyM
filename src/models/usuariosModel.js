@@ -91,6 +91,10 @@ const Usuario = sequelize.define("Usuario", {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false
+    },
+    genero: {
+        type: DataTypes.ENUM('masculino', 'femenino', 'otro', 'prefiero_no_decirlo'),
+        allowNull: true
     }
 }, {
     timestamps: false,
