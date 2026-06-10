@@ -9,6 +9,7 @@ const Usuario = require('../models/usuariosModel');
 const Rol = require('../models/rolesModel');
 const RefreshToken = require('../models/refreshtokenModel');
 const Ciudad = require('../models/ciudadesModel');
+const NotificacionDestinatario = require('../models/notificacionesDestinatariosModel');
 
 // Configuración del transporte de correo
 const transporter = require('../config/mailer');

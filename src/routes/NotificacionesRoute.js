@@ -5,6 +5,7 @@ const { authMiddleware } = require("../middlewares/authMiddleware");
 const { apiLimiter } = require('../middlewares/rateLimiters');
 const {
     obtenerTodas,
+    obtenerManuales,
     obtenerPorUsuario,
     crearNotificacion,
     enviarNotificacion,
@@ -12,7 +13,8 @@ const {
     marcarNotificacionIndividual,
     guardarSuscripcionPush,
     eliminarSuscripcionPush,
-    obtenerVapidKey
+    obtenerVapidKey,
+    eliminarNotificacion
 } = require("../controllers/NotificacionesController");
 
 const validarErrores = (req, res, next) => {
@@ -25,6 +27,7 @@ const validarErrores = (req, res, next) => {
 
 // 📋 RUTAS DE NOTIFICACIONES
 router.get("/", apiLimiter, obtenerTodas);
+router.get("/manuales", apiLimiter, obtenerManuales);
 
 router.get("/usuario/:id_usuario", [
     param("id_usuario").isInt({ min: 1 }).withMessage("ID inválido"),
@@ -35,6 +38,10 @@ router.post("/", [
     body("titulo").trim().notEmpty(),
     body("creado_por").trim().notEmpty(),
 ], validarErrores, authMiddleware, apiLimiter, crearNotificacion);
+
+router.delete("/:id_notificacion", [
+    param("id_notificacion").isInt({ min: 1 }).withMessage("ID inválido"),
+], validarErrores, authMiddleware, apiLimiter, eliminarNotificacion);
 
 router.post("/enviar", [
     body("id_notificacion").optional().isInt({ min: 1 }),

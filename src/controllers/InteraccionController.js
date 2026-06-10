@@ -8,6 +8,7 @@ const Membresia = require("../models/membresiaModel");
 const RedNiveles = require("../models/redNivelesModel");
 const MisionReclamo = require("../models/MisionReclamoModel");
 const MisionEspecial = require("../models/MisionEspecialModel");
+const NotificacionDestinatario = require("../models/notificacionesDestinatariosModel");
 
 const registrarInteraccion = async (req, res) => {
     try {
@@ -161,6 +162,18 @@ const registrarInteraccion = async (req, res) => {
                         estado: 'borrada',
                         fecha_finalizacion: new Date()
                     });
+
+                    // Notificar al dueño que su publicidad finalizó
+                    try {
+                        await NotificacionDestinatario.notificar({
+                            tipo: 'publicidad',
+                            titulo: 'Tu publicidad ha finalizado',
+                            id_usuario: pub.id_usuario,
+                            creado_por: 'Sistema'
+                        });
+                    } catch (notifErr) {
+                        console.error("Error al enviar notificación de fin de publicidad:", notifErr);
+                    }
                 } else {
                     await pub.update({ presupuesto_restante: nuevoPresupuesto.toFixed(2) });
                 }

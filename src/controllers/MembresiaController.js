@@ -6,6 +6,7 @@ const Usuario = require("../models/usuariosModel");
 const Cuenta = require("../models/cuentasModel");
 const RedNiveles = require("../models/redNivelesModel");
 const CreditoUsuario = require("../models/creditoUsuariosModel");
+const NotificacionDestinatario = require("../models/notificacionesDestinatariosModel");
 const { encontrarPosicionSiguiente } = require("./redNivelesController");
 const { sequelize } = require("../config/database");
 
@@ -430,6 +431,34 @@ const obtenerProgresoMembresia = async (req, res) => {
             });
         }
 
+        // --- Detección de Vencimiento y Periodo de Gracia para Notificaciones ---
+        try {
+            const hoyNotif = new Date();
+            const diffDiasNotif = Math.floor((hoyNotif - pagoMasReciente) / (1000 * 60 * 60 * 24));
+            
+            // 1. Caso: Membresía ha vencido (superó periodo de gracia)
+            if (diffDiasNotif >= diasPorMes) {
+                await NotificacionDestinatario.notificar({
+                    tipo: 'membresia',
+                    titulo: 'Tu membresía ha vencido',
+                    id_usuario: req.params.id_usuario,
+                    creado_por: 'Sistema'
+                });
+            } 
+            // 2. Caso: Periodo de gracia (entre 30 y 30+diasGracia)
+            else if (diffDiasNotif >= 30) {
+                await NotificacionDestinatario.notificar({
+                    tipo: 'membresia',
+                    titulo: 'Aviso: Tu membresía vence pronto (Periodo de gracia)',
+                    id_usuario: req.params.id_usuario,
+                    creado_por: 'Sistema'
+                });
+            }
+        } catch (notifErr) {
+            console.error("Error al procesar notificaciones automáticas de vencimiento:", notifErr);
+        }
+        // -----------------------------------------------------------------------
+
         // El primer pago cuenta
         mesesConsecutivos = 1;
 
@@ -514,6 +543,19 @@ const crearMembresia = async (req, res) => {
         };
 
         const membresia = await Membresia.create(datosMembresia);
+
+        // Enviar notificación de pago recibido (en revisión)
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'membresia',
+                titulo: 'Pago de membresía recibido',
+                id_usuario: membresia.id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificación de pago recibido:", notifyError);
+        }
+
         res.json(membresia);
     } catch (error) {
         console.error("Error al crear membresía:", error);
@@ -625,10 +667,36 @@ const aprobarMembresia = async (req, res) => {
             // Aquí podrías implementar lógica de renovación (ej. extender fecha de vencimiento)
         }
 
-        // 4. Marcar membresía como activa
         await membresia.update({ estado: 'activa' }, { transaction: t });
 
-        // 5. INTENTAR UPGRADES AUTOMÁTICOS
+        // 5. Enviar notificación de activación exitosa al usuario
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'membresia',
+                titulo: 'Membresía activada exitosamente 🏆',
+                id_usuario: membresia.id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificación de membresía activada:", notifyError);
+        }
+
+        // 6. Si es un regalo (YA APROBADO), enviar notificación final al destinatario y al pagador
+        if (membresia.id_pagador) {
+            try {
+                // Al destinatario
+                await NotificacionDestinatario.notificar({
+                    tipo: 'usuario',
+                    titulo: 'Has recibido un regalo de membresía 🎁',
+                    id_usuario: membresia.id_usuario,
+                    creado_por: 'Sistema'
+                }); 
+            } catch (notifyError) {
+                console.error("Error al enviar notificaciones de regalo de membresía aprobado:", notifyError);
+            }
+        }
+
+        // 7. INTENTAR UPGRADES AUTOMÁTICOS
         // Primero para el padre (quien acaba de recibir un hijo o una renovación en su red)
         // Segundo para el patrocinador (quien acaba de recibir la comisión)
         const { procesarAutoUpgradeInterno } = require("./redNivelesController");
@@ -684,6 +752,20 @@ const regalarMembresia = async (req, res) => {
         }, { transaction: t });
 
         await t.commit();
+
+        // 4. Enviar notificaciones de solicitud de regalo
+        try {
+            // Notificar al que regala
+            await NotificacionDestinatario.notificar({
+                tipo: 'usuario',
+                titulo: 'Solicitud de regalo de membresía enviada 🎁',
+                id_usuario: id_usuario_pagador,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificaciones de solicitud de regalo:", notifyError);
+        }
+
         res.status(201).json({ success: true, message: "Regalo enviado. Pendiente de aprobación por admin.", data: membresia });
     } catch (error) {
         await t.rollback();
@@ -711,6 +793,37 @@ const rechazarMembresia = async (req, res) => {
         }
 
         await membresia.update({ estado: 'rechazada' }, { transaction: t });
+
+        // Enviar notificaciones de rechazo
+        try {
+            if (membresia.id_pagador) {
+                // 1. Notificar al pagador (si fue un regalo)
+                await NotificacionDestinatario.notificar({
+                    tipo: 'usuario',
+                    titulo: 'Tu regalo de membresía ha sido rechazado ❌',
+                    id_usuario: membresia.id_pagador,
+                    creado_por: 'Sistema'
+                });
+
+                // 2. Notificar al destinatario con el mensaje específico de regalo
+                await NotificacionDestinatario.notificar({
+                    tipo: 'usuario',
+                    titulo: 'Tu regalo de membresía ha sido rechazado ❌',
+                    id_usuario: membresia.id_usuario,
+                    creado_por: 'Sistema'
+                });
+            } else {
+                // 3. Notificar al usuario destino (si fue pago directo)
+                await NotificacionDestinatario.notificar({
+                    tipo: 'membresia',
+                    titulo: 'Pago de membresía rechazado',
+                    id_usuario: membresia.id_usuario,
+                    creado_por: 'Sistema'
+                });
+            }
+        } catch (notifyError) {
+            console.error("Error al enviar notificaciones de membresía rechazada:", notifyError);
+        }
 
         await t.commit();
         res.json({ success: true, message: "Membresía rechazada y saldo devuelto si correspondía" });

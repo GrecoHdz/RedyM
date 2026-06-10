@@ -5,6 +5,7 @@ const CreditoUsuario = require("../models/creditoUsuariosModel");
 const Config = require("../models/configModel");
 const Usuario = require("../models/usuariosModel");
 const Membresia = require("../models/membresiaModel");
+const NotificacionDestinatario = require("../models/notificacionesDestinatariosModel");
 const { Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 
@@ -180,6 +181,18 @@ const reclamarMisionAuto = async (req, res) => {
             fecha: new Date()
         });
 
+        // Enviar notificación de misión diaria completada
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'misiones',
+                titulo: 'Misión diaria completada 🎉',
+                id_usuario: id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error('Error al enviar notificación de misión diaria:', notifyError);
+        }
+
         res.json({
             success: true,
             message: "Recompensa diaria acreditada correctamente",
@@ -230,7 +243,7 @@ const getMisionesEspeciales = async (req, res) => {
             }
         }
 
-        // Si se provee usuario, buscar los reclamos de hoy para estas misiones
+        // Si se provee usuario, buscar los reclamos de las últimas 24h para estas misiones
         const misionesConEstado = await Promise.all(misiones.map(async (mision) => {
             let claimStatus = null;
             if (id_usuario) {
@@ -239,7 +252,7 @@ const getMisionesEspeciales = async (req, res) => {
                         id_usuario,
                         id_mision: mision.id_mision,
                         tipo: 'especial',
-                        fecha: getTodayRange()
+                        fecha: getLast24HoursRange()
                     },
                     order: [['fecha', 'DESC']]
                 });
@@ -394,6 +407,18 @@ const reclamarMisionEspecial = async (req, res) => {
             fecha: new Date()
         });
 
+        // Enviar notificación de misión especial enviada
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'misiones',
+                titulo: 'Misión especial enviada',
+                id_usuario: id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error('Error al enviar notificación de misión especial enviada:', notifyError);
+        }
+
         res.json({
             success: true,
             message: "Reclamo enviado correctamente y pendiente de aprobación",
@@ -477,6 +502,27 @@ const procesarReclamo = async (req, res) => {
         }
 
         await reclamo.update({ estado });
+
+        // Enviar notificación según estado
+        try {
+            if (estado === 'aprobado') {
+                await NotificacionDestinatario.notificar({
+                    tipo: 'misiones',
+                    titulo: 'Misión especial aprobada ⚡',
+                    id_usuario: reclamo.id_usuario,
+                    creado_por: 'Sistema'
+                });
+            } else {
+                await NotificacionDestinatario.notificar({
+                    tipo: 'misiones',
+                    titulo: 'Misión especial rechazada',
+                    id_usuario: reclamo.id_usuario,
+                    creado_por: 'Sistema'
+                });
+            }
+        } catch (notifyError) {
+            console.error('Error al enviar notificación de procesamiento de misión:', notifyError);
+        }
 
         res.json({
             success: true,
@@ -593,6 +639,27 @@ const finalizarMisionSeleccion = async (req, res) => {
             }
 
             await reclamo.update({ estado: nuevoEstado }, { transaction });
+
+            // Enviar notificación a cada usuario
+            try {
+                if (nuevoEstado === 'aprobado') {
+                    await NotificacionDestinatario.notificar({
+                        tipo: 'misiones',
+                        titulo: 'Misión especial aprobada ⚡',
+                        id_usuario: reclamo.id_usuario,
+                        creado_por: 'Sistema'
+                    });
+                } else {
+                    await NotificacionDestinatario.notificar({
+                        tipo: 'misiones',
+                        titulo: 'Misión especial rechazada',
+                        id_usuario: reclamo.id_usuario,
+                        creado_por: 'Sistema'
+                    });
+                }
+            } catch (notifyError) {
+                console.error('Error al enviar notificación de finalización de misión:', notifyError);
+            }
         }
 
         // 3. Opcional: Desactivar la misión una vez finalizada y guardar la respuesta correcta

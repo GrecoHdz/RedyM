@@ -70,7 +70,7 @@ const enviarPushHelper = async (destinatarios, titulo, cuerpo, data = {}) => {
     }
 };
 
-// 1️⃣ Obtener todas las notificaciones
+// 1️⃣ Obtener todas las notificaciones (Log Global de Actividad)
 const obtenerTodas = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
@@ -82,8 +82,7 @@ const obtenerTodas = async (req, res) => {
                 {
                     model: Notificacion,
                     as: 'notificacion',
-                    attributes: ['titulo', 'creado_por'],
-                    where: { creado_por: 'Sistema' },
+                    attributes: ['titulo', 'creado_por', 'tipo'],
                     required: true
                 },
                 {
@@ -94,10 +93,7 @@ const obtenerTodas = async (req, res) => {
                     include: [{
                         model: Rol,
                         as: 'rol',
-                        attributes: [],
-                        where: {
-                            nombre_rol: { [Op.ne]: 'Admin' }
-                        },
+                        attributes: ['nombre_rol'],
                         required: true
                     }]
                 }
@@ -113,7 +109,10 @@ const obtenerTodas = async (req, res) => {
         const notificacionesFormateadas = notificaciones.map(notif => ({
             id: notif.id_destinatario_notificacion,
             titulo: notif.notificacion.titulo,
+            tipo: notif.notificacion.tipo,
+            creado_por: notif.notificacion.creado_por,
             nombreUsuario: notif.usuario.nombre,
+            rolUsuario: notif.usuario.rol.nombre_rol,
             fecha: notif.fecha_creacion,
             leido: notif.leido,
             fechaLeido: notif.fecha_leido
@@ -130,11 +129,49 @@ const obtenerTodas = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("Error al obtener notificaciones:", error);
+        console.error("Error al obtener log global de notificaciones:", error);
         res.status(500).json({
             success: false,
-            message: "Error al obtener notificaciones",
+            message: "Error al obtener el log de actividad",
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// 1.1️⃣ Obtener notificaciones manuales (creadas por admin/usuarios)
+const obtenerManuales = async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    try {
+        const { count, rows: notificaciones } = await Notificacion.findAndCountAll({
+            where: {
+                [Op.or]: [
+                    { tipo: 'manual' },
+                    { creado_por: { [Op.ne]: 'Sistema' } }
+                ]
+            },
+            order: [['fecha_creacion', 'DESC']],
+            limit,
+            offset
+        });
+
+        res.json({
+            success: true,
+            data: notificaciones,
+            pagination: {
+                total: count,
+                page,
+                pages: Math.ceil(count / limit),
+                limit
+            }
+        });
+    } catch (error) {
+        console.error("Error al obtener notificaciones manuales:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error al obtener notificaciones manuales"
         });
     }
 };
@@ -377,8 +414,37 @@ const obtenerVapidKey = (req, res) => {
     res.json({ success: true, key: process.env.VAPID_PUBLIC_KEY });
 };
 
+// 🔟 Eliminar Plantilla de Notificación
+const eliminarNotificacion = async (req, res) => {
+    const { id_notificacion } = req.params;
+    try {
+        const deletedCount = await Notificacion.destroy({
+            where: { id_notificacion }
+        });
+
+        if (deletedCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "No se encontró la notificación para eliminar"
+            });
+        }
+
+        res.json({
+            success: true,
+            message: "Plantilla de notificación eliminada correctamente"
+        });
+    } catch (error) {
+        console.error("Error al eliminar notificación:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error al eliminar la notificación"
+        });
+    }
+};
+
 module.exports = {
     obtenerTodas,
+    obtenerManuales,
     obtenerPorUsuario,
     crearNotificacion,
     enviarNotificacion,
@@ -386,5 +452,6 @@ module.exports = {
     marcarNotificacionIndividual,
     guardarSuscripcionPush,
     eliminarSuscripcionPush,
-    obtenerVapidKey
+    obtenerVapidKey,
+    eliminarNotificacion
 };

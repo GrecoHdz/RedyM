@@ -5,6 +5,7 @@ const Rol = require("../models/rolesModel");
 const Ciudad = require("../models/ciudadesModel");
 const Interaccion = require("../models/InteraccionModel");
 const { cloudinary } = require("../config/cloudinary");
+const NotificacionDestinatario = require("../models/notificacionesDestinatariosModel");
 
 // Función auxiliar para extraer edad desde el DNI (Formato: XXXX-YYYY-ZZZZZ)
 const obtenerEdadDesdeIdentidad = (identidad) => {
@@ -116,6 +117,18 @@ const registrarPago = async (req, res) => {
             num_comprobante: num_comprobante || null,
             estado: 'verificando_pago'
         });
+
+        // Notificar al usuario que su pago está en revisión
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'publicidad',
+                titulo: 'Pago de publicidad en revisión ⏳',
+                id_usuario: pub.id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifErr) {
+            console.error("Error al enviar notificación de pago en revisión:", notifErr);
+        }
 
         res.json({ success: true, message: "Pago registrado. En revisión.", data: pub });
     } catch (error) {
@@ -311,6 +324,18 @@ const aprobarPago = async (req, res) => {
 
         await pub.update({ estado: 'activa' });
 
+        // Notificar al usuario que su publicidad está activa
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'publicidad',
+                titulo: 'Publicidad aprobada y activa 🚀',
+                id_usuario: pub.id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifErr) {
+            console.error("Error al enviar notificación de publicidad activa:", notifErr);
+        }
+
         res.json({ success: true, message: "Publicación activada correctamente" });
     } catch (error) {
         console.error("Error al aprobar pago:", error);
@@ -331,6 +356,18 @@ const rechazarPago = async (req, res) => {
             num_comprobante: null,
             id_cuenta_pago: null
         });
+
+        // Notificar al usuario que su pago fue rechazado
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'publicidad',
+                titulo: 'Pago de publicidad rechazado 🔴',
+                id_usuario: pub.id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifErr) {
+            console.error("Error al enviar notificación de pago rechazado:", notifErr);
+        }
 
         res.json({ success: true, message: "Pago rechazado" });
     } catch (error) {

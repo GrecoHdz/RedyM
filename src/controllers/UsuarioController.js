@@ -14,6 +14,7 @@ const Membresia = require("../models/membresiaModel");
 const Publicacion = require("../models/publicacionesModel");
 const Interaccion = require("../models/InteraccionModel");
 const Retiro = require("../models/retiroModel");
+const NotificacionDestinatario = require("../models/notificacionesDestinatariosModel");
 
 // OBTENER TODOS LOS USUARIOS (READ ALL)
 const obtenerUsuarios = async (req, res) => {
@@ -258,6 +259,34 @@ const crearUsuario = async (req, res) => {
         }
 
         await t.commit();
+
+        // Enviar notificaciones de referido
+        try {
+            let patrocinadorFinal = id_patrocinador;
+            
+            if (!patrocinadorFinal) {
+                const configReferido = await Config.findOne({
+                    where: { tipo_config: 'referido_predeterminado' }
+                });
+                if (configReferido) {
+                    patrocinadorFinal = parseInt(configReferido.valor);
+                } else {
+                    patrocinadorFinal = 1;
+                }
+            }
+
+            if (patrocinadorFinal) {
+                // Notificar al patrocinador sobre el nuevo referido
+                await NotificacionDestinatario.notificar({
+                    tipo: 'usuario',
+                    titulo: 'Nuevo referido directo en tu red',
+                    id_usuario: patrocinadorFinal,
+                    creado_por: 'Sistema'
+                });
+            }
+        } catch (notifyError) {
+            console.error('Error al enviar notificación de referido:', notifyError);
+        }
 
         const data = nuevoUsuario.get({ plain: true });
         delete data.password_hash;
