@@ -4,8 +4,16 @@ const Interaccion = require("../models/InteraccionModel");
 const CreditoUsuario = require("../models/creditoUsuariosModel");
 const Config = require("../models/configModel");
 const Usuario = require("../models/usuariosModel");
+const Membresia = require("../models/membresiaModel");
 const { Op } = require("sequelize");
 const { sequelize } = require("../config/database");
+
+// Helper to get range of last 24 hours
+const getLast24HoursRange = () => {
+    return {
+        [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000)
+    };
+};
 
 // Helper to get range of today in local UTC-6 timezone
 const getTodayRange = () => {
@@ -16,6 +24,21 @@ const getTodayRange = () => {
     return {
         [Op.between]: [startOfToday, endOfToday]
     };
+};
+
+// Helper to check if user has active membership
+const hasActiveMembership = async (id_usuario) => {
+    // Caso especial: El primer usuario registrado (Empresa) siempre está activo
+    const firstUser = await Usuario.findOne({ order: [['id_usuario', 'ASC']], attributes: ['id_usuario'] });
+    if (firstUser && parseInt(id_usuario) === firstUser.id_usuario) return true;
+
+    const membresia = await Membresia.findOne({
+        where: { 
+            id_usuario,
+            estado: 'activa'
+        }
+    });
+    return !!membresia;
 };
 
 /**
@@ -183,6 +206,30 @@ const getMisionesEspeciales = async (req, res) => {
             order: [['fecha_creacion', 'DESC']]
         });
 
+        let canClaimMore = true;
+        let lastClaimTimestamp = null;
+        let isVip = false;
+
+        if (id_usuario) {
+            isVip = await hasActiveMembership(id_usuario);
+            
+            if (!isVip) {
+                const lastClaim = await MisionReclamo.findOne({
+                    where: {
+                        id_usuario,
+                        tipo: 'especial',
+                        fecha: getLast24HoursRange()
+                    },
+                    order: [['fecha', 'DESC']]
+                });
+                
+                if (lastClaim) {
+                    canClaimMore = false;
+                    lastClaimTimestamp = lastClaim.fecha;
+                }
+            }
+        }
+
         // Si se provee usuario, buscar los reclamos de hoy para estas misiones
         const misionesConEstado = await Promise.all(misiones.map(async (mision) => {
             let claimStatus = null;
@@ -208,7 +255,12 @@ const getMisionesEspeciales = async (req, res) => {
 
         res.json({
             success: true,
-            data: misionesConEstado
+            data: misionesConEstado,
+            limits: {
+                canClaimMore,
+                lastClaimTimestamp,
+                isVip
+            }
         });
 
     } catch (error) {
@@ -289,7 +341,31 @@ const reclamarMisionEspecial = async (req, res) => {
             return res.status(400).json({ success: false, error: "Misión no disponible" });
         }
 
-        // 2. Verificar si ya existe reclamo de esta misión hoy
+        // 2. Validar membresía y límite de 24 horas
+        const isVip = await hasActiveMembership(id_usuario);
+        if (!isVip) {
+            const lastClaim = await MisionReclamo.findOne({
+                where: {
+                    id_usuario,
+                    tipo: 'especial',
+                    fecha: getLast24HoursRange()
+                }
+            });
+
+            if (lastClaim) {
+                const lastDate = new Date(lastClaim.fecha);
+                const nextDate = new Date(lastDate.getTime() + 24 * 60 * 60 * 1000);
+                const hoursLeft = Math.ceil((nextDate.getTime() - Date.now()) / (1000 * 60 * 60));
+                
+                return res.status(403).json({
+                    success: false,
+                    error: `Límite alcanzado. Como usuario gratuito solo puedes realizar 1 misión cada 24 horas. Podrás realizar otra en aproximadamente ${hoursLeft} horas.`,
+                    nextAvailable: nextDate
+                });
+            }
+        }
+
+        // 3. Verificar si ya existe reclamo de esta MISMA misión hoy (para evitar duplicados exactos)
         const reclamoExistente = await MisionReclamo.findOne({
             where: {
                 id_usuario,
@@ -307,7 +383,7 @@ const reclamarMisionEspecial = async (req, res) => {
             });
         }
 
-        // 3. Crear reclamo
+        // 4. Crear reclamo
         const reclamo = await MisionReclamo.create({
             id_usuario,
             id_mision,

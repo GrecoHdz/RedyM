@@ -126,7 +126,9 @@ const registrarPago = async (req, res) => {
 
 const obtenerPublicaciones = async (req, res) => {
     try {
-        const { uid } = req.query;
+        const { uid, page = 1, limit = 10 } = req.query;
+        const limitNum = parseInt(limit);
+        const offset = (parseInt(page) - 1) * limitNum;
 
         const whereCondition = { 
             estado: 'activa',
@@ -192,7 +194,9 @@ const obtenerPublicaciones = async (req, res) => {
                 where: uid ? { id_usuario: uid } : { id_usuario: -1 },
                 required: false
             }],
-            order: [['fecha', 'DESC']]
+            order: [['fecha', 'DESC']],
+            limit: limitNum,
+            offset: offset
         });
 
         const data = publicaciones.map(p => {
@@ -244,7 +248,14 @@ const obtenerMisPublicaciones = async (req, res) => {
 // Admin: obtener publicaciones (todas o filtradas por estado) con paginación
 const obtenerPublicacionesPendientes = async (req, res) => {
     try {
-        const { estado, limit = 10, offset = 0 } = req.query;
+        const { estado, limit = 10, offset, page } = req.query;
+        const limitNum = parseInt(limit);
+        let offsetNum = offset ? parseInt(offset) : 0;
+        
+        if (page) {
+            offsetNum = (parseInt(page) - 1) * limitNum;
+        }
+
         const whereCondition = estado ? { estado } : {};
 
         const { count, rows: publicaciones } = await Publicacion.findAndCountAll({
@@ -255,8 +266,8 @@ const obtenerPublicacionesPendientes = async (req, res) => {
                 attributes: ['id_usuario', 'nombre', 'imagen_url', 'telefono']
             }],
             order: [['fecha', 'DESC']],
-            limit: parseInt(limit),
-            offset: parseInt(offset)
+            limit: limitNum,
+            offset: offsetNum
         });
 
         // Obtener estadísticas de interacciones para cada publicación
@@ -280,8 +291,9 @@ const obtenerPublicacionesPendientes = async (req, res) => {
             success: true, 
             data: publicacionesConStats,
             total: count,
-            limit: parseInt(limit),
-            offset: parseInt(offset)
+            limit: limitNum,
+            offset: offsetNum,
+            page: page ? parseInt(page) : Math.floor(offsetNum / limitNum) + 1
         });
     } catch (error) {
         console.error("Error al obtener publicaciones:", error);
