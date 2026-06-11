@@ -149,7 +149,7 @@ const obtenerPublicaciones = async (req, res) => {
         };
 
         if (uid) {
-            whereCondition.id_usuario = { [Op.ne]: uid };
+            // No excluimos al usuario - puede ver sus propias publicaciones
 
             // Obtener perfil del usuario para segmentación
             const userProfile = await Usuario.findByPk(uid);
@@ -236,17 +236,23 @@ const obtenerMisPublicaciones = async (req, res) => {
         const publicaciones = await Publicacion.findAll({
             where: { id_usuario },
             include: [{
+                model: Usuario,
+                as: 'usuario',
+                attributes: ['id_usuario', 'nombre', 'imagen_url', 'verificado', 'telefono']
+            }, {
                 model: Interaccion,
                 as: 'interacciones',
-                required: false,
-                attributes: ['id_interaccion', 'tipo', 'monto_ganado', 'fecha']
+                where: { id_usuario },
+                required: false
             }],
             order: [['fecha', 'DESC']]
         });
 
         const data = publicaciones.map(p => {
             const pub = p.toJSON();
-            pub.total_interacciones = pub.interacciones ? pub.interacciones.length : 0;
+            pub.liked = pub.interacciones?.some(i => i.tipo === 'like') || false;
+            pub.answered = pub.interacciones?.some(i => i.tipo === 'poll') || false;
+            pub.videoCompleted = pub.interacciones?.some(i => i.tipo === 'video_view') || false;
             delete pub.interacciones;
             return pub;
         });
