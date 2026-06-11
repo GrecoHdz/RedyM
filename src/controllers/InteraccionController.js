@@ -182,7 +182,7 @@ const registrarInteraccion = async (req, res) => {
         }
 
         // Acreditar la recompensa (50%) al usuario interactuante
-        if (recompensa !== 0) {
+        if (recompensa > 0) {
             const creditoExistente = await CreditoUsuario.findOne({ where: { id_usuario } });
             let montoFinal = recompensa;
             if (creditoExistente) {
@@ -195,62 +195,54 @@ const registrarInteraccion = async (req, res) => {
                 fecha: new Date()
             });
 
-            // Enviar notificación de CashBack recibido
-            try {
-                await NotificacionDestinatario.notificar({
-                    tipo: 'financieros',
-                    titulo: 'CashBack recibido por interacción',
-                    id_usuario: id_usuario,
-                    creado_por: 'Sistema'
-                });
-            } catch (notifyError) {
-                console.error("Error al enviar notificación de CashBack:", notifyError);
-            }
         }
 
         // --- LÓGICA DE NOTIFICACIONES AL DUEÑO DE LA PUBLICACIÓN ---
-        try {
-            // Obtener la publicación para conocer al dueño
-            const publicacion = await Publicacion.findByPk(id_publicacion);
-            if (publicacion && publicacion.id_usuario) {
-                // Verificar que el que interactúa NO sea el dueño de la publicación
-                if (parseInt(publicacion.id_usuario) !== parseInt(id_usuario)) {
-                    // Determinar qué notificación enviar según el tipo de interacción
-                    let tituloNotificacion = '';
-                    switch (tipo) {
-                        case 'like':
-                            tituloNotificacion = 'Alguien le dio like a tu publicación 👍';
-                            break;
-                        case 'share':
-                            tituloNotificacion = 'Alguien compartió tu publicación 📲';
-                            break;
-                        case 'poll':
-                            tituloNotificacion = 'Alguien respondió tu encuesta 📊';
-                            break;
-                        case 'video_view':
-                            tituloNotificacion = 'Alguien vio tu video completo 🎬';
-                            break;
-                        case 'visita_web':
-                            tituloNotificacion = 'Alguien visitó el enlace de tu publicación 🔗';
-                            break;
-                        case 'visita_whatsapp':
-                            tituloNotificacion = 'Alguien contactó por WhatsApp desde tu publicación 💬';
-                            break;
-                    }
-                    
-                    // Enviar notificación si tenemos un título válido
-                    if (tituloNotificacion) {
-                        await NotificacionDestinatario.notificar({
-                            tipo: 'interaccion',
-                            titulo: tituloNotificacion,
-                            id_usuario: publicacion.id_usuario,
-                            creado_por: 'Sistema'
-                        });
+        // No enviar notificaciones para "vista" tipo
+        if (tipo !== 'vista') {
+            try {
+                // Obtener la publicación para conocer al dueño
+                const publicacion = await Publicacion.findByPk(id_publicacion);
+                if (publicacion && publicacion.id_usuario) {
+                    // Verificar que el que interactúa NO sea el dueño de la publicación
+                    if (parseInt(publicacion.id_usuario) !== parseInt(id_usuario)) {
+                        // Determinar qué notificación enviar según el tipo de interacción
+                        let tituloNotificacion = '';
+                        switch (tipo) {
+                            case 'like':
+                                tituloNotificacion = 'Alguien le dio like a tu publicación 👍';
+                                break;
+                            case 'share':
+                                tituloNotificacion = 'Alguien compartió tu publicación 📲';
+                                break;
+                            case 'poll':
+                                tituloNotificacion = 'Alguien respondió tu encuesta 📊';
+                                break;
+                            case 'video_view':
+                                tituloNotificacion = 'Alguien vio tu video completo 🎬';
+                                break;
+                            case 'visita_web':
+                                tituloNotificacion = 'Alguien visitó el enlace de tu publicación 🔗';
+                                break;
+                            case 'visita_whatsapp':
+                                tituloNotificacion = 'Alguien contactó por WhatsApp desde tu publicación 💬';
+                                break;
+                        }
+                        
+                        // Enviar notificación si tenemos un título válido
+                        if (tituloNotificacion) {
+                            await NotificacionDestinatario.notificar({
+                                tipo: 'interaccion',
+                                titulo: tituloNotificacion,
+                                id_usuario: publicacion.id_usuario,
+                                creado_por: 'Sistema'
+                            });
+                        }
                     }
                 }
+            } catch (notifError) {
+                console.error("Error al enviar notificación al dueño de la publicación:", notifError);
             }
-        } catch (notifError) {
-            console.error("Error al enviar notificación al dueño de la publicación:", notifError);
         }
 
         res.status(201).json({

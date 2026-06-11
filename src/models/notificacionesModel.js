@@ -48,7 +48,6 @@ const Notificacion = sequelize.define("Notificacion", {
          { tipo: 'financieros', titulo: 'Retiro de fondos aprobado ✅', creado_por: 'Sistema' },
          { tipo: 'financieros', titulo: 'Retiro de fondos rechazado ❌', creado_por: 'Sistema' },
          { tipo: 'financieros', titulo: 'Nueva petición de retiro enviada', creado_por: 'Sistema' },
-         { tipo: 'financieros', titulo: 'CashBack recibido por interacción', creado_por: 'Sistema' },
          
          // Membresía
          { tipo: 'membresia', titulo: 'Pago de membresía recibido', creado_por: 'Sistema' },
