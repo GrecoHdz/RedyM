@@ -477,9 +477,7 @@ const procesarReclamo = async (req, res) => {
             return res.status(400).json({ success: false, error: "Estado no válido. Debe ser aprobado o rechazado" });
         }
 
-        const reclamo = await MisionReclamo.findByPk(id, {
-            include: [{ model: MisionEspecial, as: 'mision' }]
-        });
+        const reclamo = await MisionReclamo.findByPk(id);
         if (!reclamo) {
             return res.status(404).json({ success: false, error: "Reclamo no encontrado" });
         }
@@ -488,35 +486,10 @@ const procesarReclamo = async (req, res) => {
             return res.status(400).json({ success: false, error: "El reclamo ya fue procesado anteriormente" });
         }
 
-        // Si es una misión especial y está activa, no permitimos procesar (debe finalizar la misión primero)
-        if (reclamo.tipo === 'especial' && reclamo.mision && reclamo.mision.activa) {
-            return res.status(400).json({ 
-                success: false, 
-                error: "Misión aún está activa. Para procesar reclamos, primero finalice la misión desde el panel de administración." 
-            });
-        }
-
-        let montoOtorgado = 0;
-        // Si se aprueba y la misión ya está finalizada, acreditar el saldo proporcional
-        if (estado === 'aprobado' && reclamo.tipo === 'especial' && reclamo.mision && !reclamo.mision.activa && reclamo.mision.total_ganadores) {
-            montoOtorgado = parseFloat((parseFloat(reclamo.mision.valor) / reclamo.mision.total_ganadores).toFixed(2));
-            
-            const creditoExistente = await CreditoUsuario.findOne({ where: { id_usuario: reclamo.id_usuario } });
-            let nuevoMonto = montoOtorgado;
-            if (creditoExistente) {
-                nuevoMonto += parseFloat(creditoExistente.monto_credito);
-            }
-
-            await CreditoUsuario.upsert({
-                id_usuario: reclamo.id_usuario,
-                monto_credito: parseFloat(nuevoMonto.toFixed(2)),
-                fecha: new Date()
-            });
-        }
-
+        // Only update the estado, monto_otorgado is handled when finalizing mission
         await reclamo.update({ 
             estado,
-            monto_otorgado: montoOtorgado
+            monto_otorgado: 0 
         });
 
         // Enviar notificación según estado
@@ -524,7 +497,7 @@ const procesarReclamo = async (req, res) => {
             if (estado === 'aprobado') {
                 await NotificacionDestinatario.notificar({
                     tipo: 'misiones',
-                    titulo: `Misión especial aprobada ⚡ +$${montoOtorgado.toFixed(2)}`,
+                    titulo: 'Misión especial aprobada ⚡',
                     id_usuario: reclamo.id_usuario,
                     creado_por: 'Sistema'
                 });
@@ -799,27 +772,36 @@ const finalizarMisionSeleccion = async (req, res) => {
  * Finalizar una misión de respuesta escrita, distribuyendo la recompensa entre los aprobados
  */
 const finalizarMisionEscrita = async (req, res) => {
+    console.log('=== finalizarMisionEscrita STARTED ===')
+    console.log('Request body:', req.body)
+    
     const transaction = await sequelize.transaction();
     try {
         const { id_mision } = req.body;
 
         if (!id_mision) {
+            console.log('Validation error: Faltan id_mision')
             await transaction.rollback();
             return res.status(400).json({ success: false, error: "Falta id_mision" });
         }
 
         // 1. Obtener la misión
+        console.log('Finding mission with id:', id_mision)
         const mision = await MisionEspecial.findByPk(id_mision, { transaction });
         if (!mision) {
+            console.log('Validation error: Misión no encontrada')
             await transaction.rollback();
             return res.status(404).json({ success: false, error: "Misión no encontrada" });
         }
         if (!mision.activa) {
+            console.log('Validation error: Misión ya está finalizada')
             await transaction.rollback();
             return res.status(400).json({ success: false, error: "Misión ya está finalizada" });
         }
+        console.log('Found mission:', mision.titulo, 'valor:', mision.valor)
 
         // 2. Obtener todos los reclamos para esta misión
+        console.log('Finding reclamos for mission')
         const reclamos = await MisionReclamo.findAll({
             where: {
                 id_mision,
@@ -833,26 +815,33 @@ const finalizarMisionEscrita = async (req, res) => {
             }],
             transaction
         });
+        console.log('Found reclamos count:', reclamos.length)
 
         // 3. Contar cuántos ya están aprobados (ganadores)
         const ganadores = reclamos.filter(r => r.estado === 'aprobado');
         const totalGanadores = ganadores.length;
+        console.log('Total ganadores (aprobados):', totalGanadores)
 
         // 4. Calcular recompensa proporcional
         const valorTotal = parseFloat(mision.valor);
         let recompensaPorGanador = 0;
         if (totalGanadores > 0) {
             recompensaPorGanador = parseFloat((valorTotal / totalGanadores).toFixed(2));
+            console.log('Calculated recompensaPorGanador:', recompensaPorGanador)
         }
 
         const ganadoresData = [];
 
         // 5. Actualizar cada ganador con el monto correcto y ajustar saldo si es necesario
-        for (const reclamo of ganadores) {
+        for (let i = 0; i < ganadores.length; i++) {
+            const reclamo = ganadores[i];
+            console.log(`Processing ganador ${i + 1}/${ganadores.length}:`, reclamo.id_usuario)
+            
             // Ajustar el saldo: si ya se acreditó el monto completo, restar la diferencia
             const montoPreviamenteAcreditado = parseFloat(reclamo.monto_otorgado || reclamo.monto);
             const montoCorrecto = recompensaPorGanador;
             const diferencia = montoCorrecto - montoPreviamenteAcreditado;
+            console.log('Monto previamente acreditado:', montoPreviamenteAcreditado, 'Monto correcto:', montoCorrecto, 'Diferencia:', diferencia)
 
             const creditoExistente = await CreditoUsuario.findOne({
                 where: { id_usuario: reclamo.id_usuario },
@@ -862,6 +851,7 @@ const finalizarMisionEscrita = async (req, res) => {
             let nuevoMonto = creditoExistente ? parseFloat(creditoExistente.monto_credito) : 0;
             nuevoMonto += diferencia;
 
+            console.log('Updating user credit. Old:', creditoExistente?.monto_credito, 'New:', nuevoMonto)
             await CreditoUsuario.upsert({
                 id_usuario: reclamo.id_usuario,
                 monto_credito: parseFloat(nuevoMonto.toFixed(2)),
@@ -883,6 +873,7 @@ const finalizarMisionEscrita = async (req, res) => {
         }
 
         // 6. Desactivar la misión y guardar el total de ganadores
+        console.log('Updating mission to inactive and setting total_ganadores')
         await MisionEspecial.update(
             {
                 activa: false,
@@ -892,7 +883,9 @@ const finalizarMisionEscrita = async (req, res) => {
         );
 
         await transaction.commit();
+        console.log('Transaction committed')
 
+        console.log('Sending success response')
         res.json({
             success: true,
             message: `Misión finalizada. ${totalGanadores} usuarios premiados con $${recompensaPorGanador.toFixed(2)} cada uno.`,
@@ -905,8 +898,8 @@ const finalizarMisionEscrita = async (req, res) => {
         });
 
     } catch (error) {
+        console.error('=== finalizarMisionEscrita ERROR ===', error)
         if (transaction) await transaction.rollback();
-        console.error("Error al finalizar misión de respuesta escrita:", error);
         res.status(500).json({ success: false, error: "Error interno del servidor" });
     }
 };
@@ -985,88 +978,57 @@ const getMisionStats = async (req, res) => {
  * Procesar múltiples reclamos (Admin)
  */
 const procesarReclamosBulk = async (req, res) => {
-    const transaction = await sequelize.transaction();
-    try {
-        const { ids, estado } = req.body; // ids: array de ids, estado: 'aprobado' o 'rechazado'
+  console.log('=== procesarReclamosBulk STARTED ===')
+  console.log('Request body:', req.body)
+  
+  const transaction = await sequelize.transaction();
+  try {
+    const { ids, estado } = req.body; // ids: array de ids, estado: 'aprobado' o 'rechazado'
 
-        if (!ids || !Array.isArray(ids) || ids.length === 0) {
-            return res.status(400).json({ success: false, error: "Faltan IDs de reclamos" });
-        }
-
-        if (!['aprobado', 'rechazado'].includes(estado)) {
-            return res.status(400).json({ success: false, error: "Estado no válido" });
-        }
-
-        const reclamos = await MisionReclamo.findAll({
-            where: { id_reclamo: ids, estado: 'pendiente' },
-            include: [{ model: MisionEspecial, as: 'mision' }],
-            transaction
-        });
-
-        // Si es una misión especial y está activa, no permitimos procesar (debe finalizar la misión primero)
-        if (reclamos.length > 0 && reclamos[0].tipo === 'especial' && reclamos[0].mision && reclamos[0].mision.activa) {
-            await transaction.rollback();
-            return res.status(400).json({ 
-                success: false, 
-                error: "Misión aún está activa. Para procesar reclamos, primero finalice la misión desde el panel de administración." 
-            });
-        }
-
-        // Get mission details from first claim to determine monto_otorgado
-        let mission = null;
-        let montoOtorgadoPerClaim = null;
-        if (reclamos.length > 0 && reclamos[0].tipo === 'especial') {
-            mission = reclamos[0].mision;
-            if (mission && !mission.activa && mission.total_ganadores) {
-                montoOtorgadoPerClaim = parseFloat((parseFloat(mission.valor) / mission.total_ganadores).toFixed(2));
-            }
-        }
-
-        let procesados = 0;
-
-        for (const reclamo of reclamos) {
-            let montoOtorgado = 0;
-            
-            if (estado === 'aprobado' && montoOtorgadoPerClaim !== null) {
-                montoOtorgado = montoOtorgadoPerClaim;
-                
-                const creditoExistente = await CreditoUsuario.findOne({ 
-                    where: { id_usuario: reclamo.id_usuario },
-                    transaction 
-                });
-                
-                let nuevoMonto = montoOtorgado;
-                if (creditoExistente) {
-                    nuevoMonto += parseFloat(creditoExistente.monto_credito);
-                }
-
-                await CreditoUsuario.upsert({
-                    id_usuario: reclamo.id_usuario,
-                    monto_credito: parseFloat(nuevoMonto.toFixed(2)),
-                    fecha: new Date()
-                }, { transaction });
-            }
-
-            await reclamo.update({ 
-                estado, 
-                monto_otorgado: montoOtorgado 
-            }, { transaction });
-            procesados++;
-        }
-
-        await transaction.commit();
-
-        res.json({
-            success: true,
-            message: `${procesados} reclamos procesados como ${estado}`,
-            data: { procesados }
-        });
-
-    } catch (error) {
-        if (transaction) await transaction.rollback();
-        console.error("Error en procesamiento masivo:", error);
-        res.status(500).json({ success: false, error: "Error interno del servidor" });
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      console.log('Validation error: Faltan IDs de reclamos')
+      return res.status(400).json({ success: false, error: "Faltan IDs de reclamos" });
     }
+
+    if (!['aprobado', 'rechazado'].includes(estado)) {
+      console.log('Validation error: Estado no válido')
+      return res.status(400).json({ success: false, error: "Estado no válido" });
+    }
+
+    console.log('Finding reclamos with ids:', ids)
+    const reclamos = await MisionReclamo.findAll({
+      where: { id_reclamo: ids, estado: 'pendiente' },
+      transaction
+    });
+
+    console.log('Found reclamos count:', reclamos.length)
+
+    let procesados = 0;
+
+    for (const reclamo of reclamos) {
+      console.log('Updating reclamo:', reclamo.id_reclamo)
+      await reclamo.update({ 
+        estado, 
+        monto_otorgado: 0 // We'll handle monto_otorgado later when we finalize the mission
+      }, { transaction });
+      procesados++;
+    }
+
+    console.log('Committing transaction')
+    await transaction.commit();
+
+    console.log('Sending success response')
+    res.json({
+      success: true,
+      message: `${procesados} reclamos procesados como ${estado}`,
+      data: { procesados }
+    });
+
+  } catch (error) {
+    console.error('=== procesarReclamosBulk ERROR ===', error)
+    if (transaction) await transaction.rollback();
+    res.status(500).json({ success: false, error: "Error interno del servidor" });
+  }
 };
 
 /**
