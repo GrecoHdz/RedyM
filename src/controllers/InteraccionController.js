@@ -270,6 +270,21 @@ const obtenerInteracciones = async (req, res) => {
     }
 };
 
+const obtenerVistasPorUsuario = async (req, res) => {
+    try {
+        const { id_usuario } = req.params;
+        const vistas = await Interaccion.findAll({
+            where: { id_usuario, tipo: 'vista' },
+            attributes: ['id_publicacion'],
+            raw: true
+        });
+        res.json({ success: true, data: vistas });
+    } catch (error) {
+        console.error("Error al obtener vistas por usuario:", error);
+        res.status(500).json({ success: false, message: "Error al obtener vistas" });
+    }
+};
+
 const obtenerInteraccionesPorUsuario = async (req, res) => {
     try {
         const { id_usuario } = req.params;
@@ -481,5 +496,6 @@ const obtenerInteraccionesPorUsuario = async (req, res) => {
 module.exports = {
     registrarInteraccion,
     obtenerInteracciones,
-    obtenerInteraccionesPorUsuario
+    obtenerInteraccionesPorUsuario,
+    obtenerVistasPorUsuario
 };

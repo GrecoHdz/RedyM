@@ -1,6 +1,5 @@
 const { Sequelize, Op } = require("sequelize");
 const Membresia = require("../models/membresiaModel");
-const MembresiaBeneficio = require("../models/membresiaBeneficiosModel");
 const Config = require("../models/configModel");
 const Usuario = require("../models/usuariosModel");
 const Cuenta = require("../models/cuentasModel");
