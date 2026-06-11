@@ -47,13 +47,12 @@ app.use((req, res, next) => {
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(cookieParser());
-console.log("CORS origin:", process.env.FRONTEND_URL);
+
 // Configuración de CORS
 const corsOptions = {
     origin: function (origin, callback) {
         // Permitir solicitudes sin origin (Postman, apps móviles)
         if (!origin) {
-            console.log('ℹ️ Solicitud sin cabecera Origin (permitida por defecto)');
             return callback(null, true);
         }
 
@@ -76,19 +75,9 @@ const corsOptions = {
 
         const isAllowed = allowedOrigins.includes(cleanOrigin) || isVercelPreview;
 
-        console.log('--- CORS DEBUG INFO ---');
-        console.log(`🔹 Origin recibido: "${origin}"`);
-        console.log(`🔹 Clean Origin:    "${cleanOrigin}"`);
-        console.log(`🔹 FRONTEND_URL:    "${process.env.FRONTEND_URL}"`);
-        console.log(`🔹 Orígenes permitidos list:`, allowedOrigins);
-        console.log(`🔹 ¿Es Vercel Preview?: ${isVercelPreview}`);
-        console.log(`🔹 Resultado de validación: ${isAllowed ? '✅ PERMITIDO' : '❌ BLOQUEADO'}`);
-        console.log('-----------------------');
-
         if (isAllowed) {
             callback(null, true);
         } else {
-            console.log('❌ Origen bloqueado por CORS:', origin);
             callback(new Error(`No permitido por CORS. Recibido: ${origin}`));
         }
     },
