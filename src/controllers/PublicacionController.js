@@ -419,41 +419,54 @@ const eliminarPublicacion = async (req, res) => {
 };
 
 const incrementarVista = async (req, res) => {
+    console.log('📊 [incrementarVista] Called with:', {
+        id_publicacion: req.params.id_publicacion,
+        id_usuario: req.body.id_usuario
+    })
     try {
         const { id_publicacion } = req.params;
         const { id_usuario } = req.body;
 
         if (!id_usuario) {
+            console.log('📊 [incrementarVista] Missing id_usuario!')
             return res.status(400).json({ success: false, message: "id_usuario es requerido" });
         }
 
         // Verificar si este usuario ya registró una vista para esta publicación
+        console.log('📊 [incrementarVista] Checking for existing view...')
         const vistaExistente = await Interaccion.findOne({
             where: { id_publicacion, id_usuario, tipo: 'vista' }
         });
+        console.log('📊 [incrementarVista] Existing view found:', !!vistaExistente)
 
         if (vistaExistente) {
             return res.json({ success: false, message: "Ya contabilizada", already_done: true });
         }
 
         // Registrar la interacción de vista
+        console.log('📊 [incrementarVista] Creating new view interaction...')
         await Interaccion.create({
             id_publicacion,
             id_usuario,
             tipo: 'vista',
             monto_ganado: 0
         });
+        console.log('📊 [incrementarVista] View interaction created!')
 
         // Incrementar el contador en la publicación
+        console.log('📊 [incrementarVista] Finding publication...')
         const pub = await Publicacion.findByPk(id_publicacion);
         if (!pub) {
+            console.log('📊 [incrementarVista] Publication not found!')
             return res.status(404).json({ success: false, message: "Publicación no encontrada" });
         }
+        console.log('📊 [incrementarVista] Incrementing vistas...')
         await pub.increment('vistas');
 
+        console.log('📊 [incrementarVista] Success!')
         res.json({ success: true, message: "Vista registrada", vistas: pub.vistas + 1 });
     } catch (error) {
-        console.error("Error al incrementar vista:", error);
+        console.error("📊 [incrementarVista] Error:", error);
         res.status(500).json({ success: false, message: "Error al incrementar vista" });
     }
 };
