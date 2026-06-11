@@ -52,25 +52,44 @@ console.log("CORS origin:", process.env.FRONTEND_URL);
 const corsOptions = {
     origin: function (origin, callback) {
         // Permitir solicitudes sin origin (Postman, apps móviles)
-        if (!origin) return callback(null, true);
+        if (!origin) {
+            console.log('ℹ️ Solicitud sin cabecera Origin (permitida por defecto)');
+            return callback(null, true);
+        }
 
-        // Lista de orígenes permitidos
+        // Limpiar slash final para evitar problemas de concordancia exacta
+        const cleanOrigin = origin.replace(/\/$/, "");
+
+        // Lista de orígenes permitidos (los guardamos sin slash final para comparar de forma segura)
         const allowedOrigins = [
-            'https://publigana.vercel.app/',  // URL principal
-            'http://localhost:5173',
+            'https://publigana.vercel.app',
             'http://localhost:3000',
-            'http://127.0.0.1:3000',
-            process.env.FRONTEND_URL
+            'http://localhost:4000',
         ];
 
-        // Permitir todas las URLs de Vercel de tu proyecto
-        const isVercelPreview = origin && origin.includes('miseguros-projects-00c1e523.vercel.app');
+        if (process.env.FRONTEND_URL) {
+            allowedOrigins.push(process.env.FRONTEND_URL.replace(/\/$/, ""));
+        }
 
-        if (allowedOrigins.includes(origin) || isVercelPreview) {
+        // Permitir todas las URLs de Vercel de tu proyecto
+        const isVercelPreview = cleanOrigin.includes('miseguros-projects-00c1e523.vercel.app');
+
+        const isAllowed = allowedOrigins.includes(cleanOrigin) || isVercelPreview;
+
+        console.log('--- CORS DEBUG INFO ---');
+        console.log(`🔹 Origin recibido: "${origin}"`);
+        console.log(`🔹 Clean Origin:    "${cleanOrigin}"`);
+        console.log(`🔹 FRONTEND_URL:    "${process.env.FRONTEND_URL}"`);
+        console.log(`🔹 Orígenes permitidos list:`, allowedOrigins);
+        console.log(`🔹 ¿Es Vercel Preview?: ${isVercelPreview}`);
+        console.log(`🔹 Resultado de validación: ${isAllowed ? '✅ PERMITIDO' : '❌ BLOQUEADO'}`);
+        console.log('-----------------------');
+
+        if (isAllowed) {
             callback(null, true);
         } else {
             console.log('❌ Origen bloqueado por CORS:', origin);
-            callback(new Error('No permitido por CORS'));
+            callback(new Error(`No permitido por CORS. Recibido: ${origin}`));
         }
     },
     credentials: true,
