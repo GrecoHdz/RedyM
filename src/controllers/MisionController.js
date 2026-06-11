@@ -501,13 +501,6 @@ const procesarReclamo = async (req, res) => {
                     id_usuario: reclamo.id_usuario,
                     creado_por: 'Sistema'
                 });
-            } else {
-                await NotificacionDestinatario.notificar({
-                    tipo: 'misiones',
-                    titulo: 'Misión especial rechazada',
-                    id_usuario: reclamo.id_usuario,
-                    creado_por: 'Sistema'
-                });
             }
         } catch (notifyError) {
             console.error('Error al enviar notificación de procesamiento de misión:', notifyError);
@@ -723,14 +716,7 @@ const finalizarMisionSeleccion = async (req, res) => {
                         id_usuario: reclamo.id_usuario,
                         creado_por: 'Sistema'
                     });
-                } else {
-                    await NotificacionDestinatario.notificar({
-                        tipo: 'misiones',
-                        titulo: 'Misión especial rechazada',
-                        id_usuario: reclamo.id_usuario,
-                        creado_por: 'Sistema'
-                    });
-                }
+                } 
             } catch (notifyError) {
                 console.error('Error al enviar notificación de finalización de misión:', notifyError);
             }
@@ -872,7 +858,23 @@ const finalizarMisionEscrita = async (req, res) => {
             });
         }
 
-        // 6. Desactivar la misión y guardar el total de ganadores
+        // 6. Enviar notificaciones a todos los usuarios que participaron
+        for (const reclamo of reclamos) {
+            try {
+                if (reclamo.estado === 'aprobado') {
+                    await NotificacionDestinatario.notificar({
+                        tipo: 'misiones',
+                        titulo: `Misión especial aprobada ⚡ +$${recompensaPorGanador.toFixed(2)}`,
+                        id_usuario: reclamo.id_usuario,
+                        creado_por: 'Sistema'
+                    });
+                }
+            } catch (notifyError) {
+                console.error('Error al enviar notificación de finalización de misión escrita:', notifyError);
+            }
+        }
+
+        // 7. Desactivar la misión y guardar el total de ganadores
         console.log('Updating mission to inactive and setting total_ganadores')
         await MisionEspecial.update(
             {

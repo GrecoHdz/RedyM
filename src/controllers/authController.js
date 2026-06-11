@@ -174,214 +174,227 @@ const login = async (req, res) => {
 
 // REFRESH TOKEN
 const refreshToken = async (req, res) => {
-    const t = await sequelize.transaction();
-    try {
-        // Aceptar refresh token desde cookie (web) o header X-Refresh-Token (PWA standalone)
-        const refreshToken = req.cookies.refreshToken || req.headers['x-refresh-token'];
-        const accessToken = req.cookies.token || req.headers.authorization?.split(' ')[1];
-        const isPWA = !!req.headers['x-refresh-token'] && !req.cookies.refreshToken;
+  try {
+    // Aceptar refresh token desde cookie (web) o header X-Refresh-Token (PWA standalone)
+    const refreshToken = req.cookies.refreshToken || req.headers['x-refresh-token'];
+    const accessToken = req.cookies.token || req.headers.authorization?.split(' ')[1];
+    const isPWA = !!req.headers['x-refresh-token'] && !req.cookies.refreshToken;
 
-        console.log('🔄 [AuthBack] Intento de refresh-token');
-        console.log('📦 [AuthBack] Cookies presentes:', req.cookies ? Object.keys(req.cookies) : 'Ninguna');
-        if (isPWA) console.log('📱 [AuthBack] Modo PWA: refresh token recibido por header');
+    console.log('🔄 [AuthBack] Intento de refresh-token');
+    console.log('📦 [AuthBack] Cookies presentes:', req.cookies ? Object.keys(req.cookies) : 'Ninguna');
+    if (isPWA) console.log('📱 [AuthBack] Modo PWA: refresh token recibido por header');
 
-        // Si no hay refresh token pero hay access token, intentar regenerar el refresh token
-        if (!refreshToken && accessToken) {
-            try {
-                const decoded = jwt.verify(accessToken, process.env.JWT_SECRET, { ignoreExpiration: true });
+    // Si no hay refresh token pero hay access token, intentar regenerar el refresh token
+    if (!refreshToken && accessToken) {
+      const t = await sequelize.transaction();
+      try {
+        const decoded = jwt.verify(accessToken, process.env.JWT_SECRET, { ignoreExpiration: true });
 
-                const user = await Usuario.findByPk(decoded.id, {
-                    include: [
-                        { model: Rol, as: 'rol', attributes: ['id_rol', 'nombre_rol'] },
-                        { model: Ciudad, as: 'ciudad', attributes: ['id_ciudad', 'nombre_ciudad'] }
-                    ]
-                });
-
-                await RefreshToken.destroy({
-                    where: { usuario_id: user.id_usuario },
-                    transaction: t
-                });
-
-                const newAccessToken = generateAccessToken(user);
-                const newRefreshToken = await generateRefreshToken(user, t);
-
-                const userData = user.get({ plain: true });
-                delete userData.password_hash;
-
-                const userForCookie = {
-                    id_usuario: userData.id_usuario,
-                    nombre: userData.nombre,
-                    role: (user.rol && user.rol.nombre_rol) || 'usuario',
-                    id_ciudad: userData.id_ciudad || 1
-                };
-
-                // ✅ Todas las cookies con sameSite: 'none' en producción
-                res.cookie('refreshToken', newRefreshToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-                    maxAge: 7 * 24 * 60 * 60 * 1000,
-                    path: '/',
-                    partitioned: process.env.NODE_ENV === 'production',
-                });
-
-                res.cookie('token', newAccessToken, {
-                    httpOnly: false,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-                    maxAge: 15 * 60 * 1000,
-                    path: '/',
-                    partitioned: process.env.NODE_ENV === 'production',
-                });
-
-                res.cookie('user', JSON.stringify(userForCookie), {
-                    httpOnly: false,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-                    maxAge: 7 * 24 * 60 * 60 * 1000,
-                    path: '/',
-                    partitioned: process.env.NODE_ENV === 'production',
-                });
-
-                await t.commit();
-                return res.json({
-                    success: true,
-                    message: 'Sesión renovada exitosamente',
-                    token: newAccessToken,
-                    user: userForCookie,
-                });
-            } catch (error) {
-                console.error('Error al regenerar tokens:', error);
-                clearAllAuthCookies(res);
-                await t.rollback();
-                return res.status(401).json({
-                    success: false,
-                    message: 'Sesión expirada. Por favor, inicie sesión nuevamente.',
-                    details: process.env.NODE_ENV === 'development' ? error.message : undefined
-                });
-            }
-        }
-
-        if (!refreshToken) {
-            clearAllAuthCookies(res);
-            await t.rollback();
-            return res.status(401).json({
-                success: false,
-                message: 'No se encontró el token de actualización. Por favor, inicie sesión nuevamente.',
-            });
-        }
-
-        console.log('🔍 [AuthBack] RefreshToken recibido:', refreshToken ? (refreshToken.substring(0, 5) + '...') : 'null');
-
-        const storedToken = await RefreshToken.findOne({
-            where: { token: refreshToken },
-            include: [
-                {
-                    model: Usuario,
-                    as: 'usuario',
-                    attributes: { exclude: ['password_hash'] },
-                    include: [
-                        { model: Rol, as: 'rol', attributes: ['id_rol', 'nombre_rol'] },
-                        { model: Ciudad, as: 'ciudad', attributes: ['id_ciudad', 'nombre_ciudad'] }
-                    ],
-                },
-            ],
-            transaction: t,
+        const user = await Usuario.findByPk(decoded.id, {
+          include: [
+            { model: Rol, as: 'rol', attributes: ['id_rol', 'nombre_rol'] },
+            { model: Ciudad, as: 'ciudad', attributes: ['id_ciudad', 'nombre_ciudad'] }
+          ]
         });
 
-        if (!storedToken) {
-            console.warn('❌ [authController] RefreshToken not found in DB:', { refreshToken: refreshToken ? (refreshToken.substring(0, 5) + '...') : 'null' });
-            clearAllAuthCookies(res);
-            await t.rollback();
-            return res.status(403).json({
-                success: false,
-                message: 'Sesión expirada. Por favor, inicie sesión nuevamente.',
-            });
+        if (!user) {
+          await t.rollback();
+          clearAllAuthCookies(res);
+          return res.status(401).json({
+            success: false,
+            message: 'Sesión expirada. Por favor, inicie sesión nuevamente.'
+          });
         }
 
-        // Verificar expiración del refresh token
-        if (new Date() > storedToken.expires_at) {
-            console.warn('❌ [authController] RefreshToken expired:', { expiresAt: storedToken.expires_at });
-            await storedToken.destroy({ transaction: t });
-            clearAllAuthCookies(res);
-            await t.rollback();
-            return res.status(403).json({
-                success: false,
-                message: 'Sesión expirada. Por favor, inicie sesión nuevamente.'
-            });
-        }
+        await RefreshToken.destroy({
+          where: { usuario_id: user.id_usuario },
+          transaction: t
+        });
 
-        const user = storedToken.usuario;
         const newAccessToken = generateAccessToken(user);
-
-        // Destruir el refresh token antiguo y crear uno nuevo (rotación limpia)
-        await storedToken.destroy({ transaction: t });
         const newRefreshToken = await generateRefreshToken(user, t);
 
         const userData = user.get({ plain: true });
         delete userData.password_hash;
 
-        userData.role = user.rol && user.rol.nombre_rol
-            ? user.rol.nombre_rol.toLowerCase()
-            : 'usuario';
-
         const userForCookie = {
-            id_usuario: userData.id_usuario,
-            nombre: userData.nombre,
-            role: userData.role,
-            id_rol: userData.id_rol,
-            id_ciudad: userData.id_ciudad || 1,
-            estado: userData.estado
+          id_usuario: userData.id_usuario,
+          nombre: userData.nombre,
+          role: (user.rol && user.rol.nombre_rol) || 'usuario',
+          id_ciudad: userData.id_ciudad || 1
         };
 
+        // ✅ Todas las cookies con sameSite: 'none' en producción
         res.cookie('refreshToken', newRefreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-            path: '/',
-            partitioned: process.env.NODE_ENV === 'production',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+          path: '/',
+          partitioned: process.env.NODE_ENV === 'production',
         });
 
         res.cookie('token', newAccessToken, {
-            httpOnly: false,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-            maxAge: 15 * 60 * 1000,
-            path: '/',
-            partitioned: process.env.NODE_ENV === 'production',
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+          maxAge: 15 * 60 * 1000,
+          path: '/',
+          partitioned: process.env.NODE_ENV === 'production',
         });
 
         res.cookie('user', JSON.stringify(userForCookie), {
-            httpOnly: false,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-            path: '/',
-            partitioned: process.env.NODE_ENV === 'production',
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+          path: '/',
+          partitioned: process.env.NODE_ENV === 'production',
         });
 
         await t.commit();
-        res.json({
-            success: true,
-            message: 'Token actualizado correctamente',
-            token: newAccessToken,
-            // Devolver el nuevo refresh token en el body para que la PWA lo guarde en localStorage
-            refreshToken: newRefreshToken,
-            user: userForCookie,
+        return res.json({
+          success: true,
+          message: 'Sesión renovada exitosamente',
+          token: newAccessToken,
+          user: userForCookie,
         });
-    } catch (error) {
-        if (t && !t.finished) {
-            await t.rollback();
-        }
-        console.error('Error al refrescar el token:', error);
+      } catch (error) {
+        console.error('Error al regenerar tokens:', error);
         clearAllAuthCookies(res);
-        res.status(401).json({
-            success: false,
-            message: 'Sesión expirada. Por favor, inicie sesión nuevamente.',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        await t.rollback();
+        return res.status(401).json({
+          success: false,
+          message: 'Sesión expirada. Por favor, inicie sesión nuevamente.',
+          details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+      }
     }
+
+    if (!refreshToken) {
+      clearAllAuthCookies(res);
+      return res.status(401).json({
+        success: false,
+        message: 'No se encontró el token de actualización. Por favor, inicie sesión nuevamente.',
+      });
+    }
+
+    console.log('🔍 [AuthBack] RefreshToken recibido:', refreshToken ? (refreshToken.substring(0, 5) + '...') : 'null');
+
+    const t = await sequelize.transaction();
+    try {
+      const storedToken = await RefreshToken.findOne({
+        where: { token: refreshToken },
+        include: [
+          {
+            model: Usuario,
+            as: 'usuario',
+            attributes: { exclude: ['password_hash'] },
+            include: [
+              { model: Rol, as: 'rol', attributes: ['id_rol', 'nombre_rol'] },
+              { model: Ciudad, as: 'ciudad', attributes: ['id_ciudad', 'nombre_ciudad'] }
+            ],
+          },
+        ],
+        transaction: t,
+      });
+
+      if (!storedToken) {
+        console.warn('❌ [authController] RefreshToken not found in DB:', { refreshToken: refreshToken ? (refreshToken.substring(0, 5) + '...') : 'null' });
+        clearAllAuthCookies(res);
+        await t.rollback();
+        return res.status(403).json({
+          success: false,
+          message: 'Sesión expirada. Por favor, inicie sesión nuevamente.',
+        });
+      }
+
+      // Verificar expiración del refresh token
+      if (new Date() > storedToken.expires_at) {
+        console.warn('❌ [authController] RefreshToken expired:', { expiresAt: storedToken.expires_at });
+        await storedToken.destroy({ transaction: t });
+        clearAllAuthCookies(res);
+        await t.rollback();
+        return res.status(403).json({
+          success: false,
+          message: 'Sesión expirada. Por favor, inicie sesión nuevamente.'
+        });
+      }
+
+      const user = storedToken.usuario;
+      const newAccessToken = generateAccessToken(user);
+
+      // Destruir el refresh token antiguo y crear uno nuevo (rotación limpia)
+      await storedToken.destroy({ transaction: t });
+      const newRefreshToken = await generateRefreshToken(user, t);
+
+      const userData = user.get({ plain: true });
+      delete userData.password_hash;
+
+      userData.role = user.rol && user.rol.nombre_rol
+        ? user.rol.nombre_rol.toLowerCase()
+        : 'usuario';
+
+      const userForCookie = {
+        id_usuario: userData.id_usuario,
+        nombre: userData.nombre,
+        role: userData.role,
+        id_rol: userData.id_rol,
+        id_ciudad: userData.id_ciudad || 1,
+        estado: userData.estado
+      };
+
+      res.cookie('refreshToken', newRefreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
+        partitioned: process.env.NODE_ENV === 'production',
+      });
+
+      res.cookie('token', newAccessToken, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 15 * 60 * 1000,
+        path: '/',
+        partitioned: process.env.NODE_ENV === 'production',
+      });
+
+      res.cookie('user', JSON.stringify(userForCookie), {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
+        partitioned: process.env.NODE_ENV === 'production',
+      });
+
+      await t.commit();
+      res.json({
+        success: true,
+        message: 'Token actualizado correctamente',
+        token: newAccessToken,
+        // Devolver el nuevo refresh token en el body para que la PWA lo guarde en localStorage
+        refreshToken: newRefreshToken,
+        user: userForCookie,
+      });
+    } catch (error) {
+      if (t && !t.finished) {
+        await t.rollback();
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error al refrescar el token:', error);
+    clearAllAuthCookies(res);
+    res.status(401).json({
+      success: false,
+      message: 'Sesión expirada. Por favor, inicie sesión nuevamente.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 };
 
 // LOGOUT
