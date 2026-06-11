@@ -1,5 +1,21 @@
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
+const webpush = require("web-push");
+const SuscripcionNotificacion = require("./suscripcionesNotificacionesModel");
+const { Op } = require("sequelize");
+
+// Configurar Web Push
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    try {
+        webpush.setVapidDetails(
+            process.env.VAPID_SUBJECT || 'mailto:contactoredymercadeo@gmail.com',
+            process.env.VAPID_PUBLIC_KEY,
+            process.env.VAPID_PRIVATE_KEY
+        );
+    } catch (error) {
+        console.error('❌ Error configurando Web Push:', error.message);
+    }
+}
 
 const NotificacionDestinatario = sequelize.define("NotificacionDestinatario", {
     id_destinatario_notificacion: {
@@ -70,13 +86,62 @@ NotificacionDestinatario.notificar = async function({ tipo, titulo, id_usuario, 
         });
 
         // 2. Crear el registro para el destinatario
-        return await NotificacionDestinatario.create({
+        const destinatario = await NotificacionDestinatario.create({
             id_notificacion: plantilla.id_notificacion,
             id_usuario,
             leido: false,
             fecha_creacion: new Date(),
             fecha_leido: null
         });
+
+        // 3. Enviar push notification si es posible
+        try {
+            if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+                // Obtener suscripciones del usuario
+                const subscriptions = await SuscripcionNotificacion.findAll({
+                    where: { id_usuario }
+                });
+
+                if (subscriptions.length > 0) {
+                    const notifications = subscriptions.map(sub => {
+                        const pushSubscription = {
+                            endpoint: sub.endpoint,
+                            keys: {
+                                auth: sub.keys_auth,
+                                p256dh: sub.keys_p256dh
+                            }
+                        };
+
+                        const payload = JSON.stringify({
+                            title: 'Nueva notificación',
+                            body: titulo,
+                            icon: '/favicon.ico',
+                            data: {
+                                url: '/cliente/dashboard',
+                                tipo,
+                                id_notificacion: plantilla.id_notificacion
+                            }
+                        });
+
+                        return webpush.sendNotification(pushSubscription, payload)
+                            .catch(err => {
+                                if (err.statusCode === 410 || err.statusCode === 404) {
+                                    // Suscripción inválida, eliminarla
+                                    return SuscripcionNotificacion.destroy({ 
+                                        where: { id_suscripcion: sub.id_suscripcion } 
+                                    });
+                                }
+                            });
+                    });
+
+                    await Promise.allSettled(notifications);
+                }
+            }
+        } catch (pushError) {
+            console.error("Error al enviar push notification:", pushError);
+        }
+
+        return destinatario;
     } catch (error) {
         console.error("Error en NotificacionDestinatario.notificar:", error);
         throw error;

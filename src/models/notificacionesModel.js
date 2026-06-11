@@ -69,6 +69,14 @@ const Notificacion = sequelize.define("Notificacion", {
          { tipo: 'misiones', titulo: 'Misión especial aprobada ⚡', creado_por: 'Sistema' },
          { tipo: 'misiones', titulo: 'Misión especial rechazada', creado_por: 'Sistema' },
          
+         // Interacciones
+         { tipo: 'interaccion', titulo: 'Alguien le dio like a tu publicación 👍', creado_por: 'Sistema' },
+         { tipo: 'interaccion', titulo: 'Alguien compartió tu publicación 📲', creado_por: 'Sistema' },
+         { tipo: 'interaccion', titulo: 'Alguien respondió tu encuesta 📊', creado_por: 'Sistema' },
+         { tipo: 'interaccion', titulo: 'Alguien vio tu video completo 🎬', creado_por: 'Sistema' },
+         { tipo: 'interaccion', titulo: 'Alguien visitó el enlace de tu publicación 🔗', creado_por: 'Sistema' },
+         { tipo: 'interaccion', titulo: 'Alguien contactó por WhatsApp desde tu publicación 💬', creado_por: 'Sistema' },
+         
          // Verificación
          { tipo: 'verificacion', titulo: 'Identidad verificada correctamente ✅', creado_por: 'Sistema' },
          { tipo: 'verificacion', titulo: 'Verificación de Identidad rechazada', creado_por: 'Sistema' },
