@@ -376,6 +376,19 @@ const reclamarMisionEspecial = async (req, res) => {
                     nextAvailable: nextDate
                 });
             }
+
+            // Usuarios gratuitos solo pueden participar en la misión de menor recompensa
+            const misionMenorRecompensa = await MisionEspecial.findOne({
+                where: { activa: true },
+                order: [['valor', 'ASC']]
+            });
+
+            if (misionMenorRecompensa && parseInt(id_mision) !== misionMenorRecompensa.id_mision) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'Como usuario gratuito, solo puedes participar en la misión de menor recompensa. Adquiere una membresía para acceder a todas las misiones.'
+                });
+            }
         }
 
         // 3. Verificar si ya existe reclamo de esta MISMA misión hoy (para evitar duplicados exactos)
