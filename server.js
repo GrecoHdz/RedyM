@@ -56,7 +56,7 @@ const corsOptions = {
 
         // Lista de orígenes permitidos
         const allowedOrigins = [
-            'https://front-six-lemon.vercel.app',  // URL principal
+            'https://publigana.vercel.app/',  // URL principal
             'http://localhost:5173',
             'http://localhost:3000',
             'http://127.0.0.1:3000',

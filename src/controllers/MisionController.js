@@ -488,17 +488,18 @@ const procesarReclamo = async (req, res) => {
             return res.status(400).json({ success: false, error: "El reclamo ya fue procesado anteriormente" });
         }
 
+        // Si es una misión especial y está activa, no permitimos procesar (debe finalizar la misión primero)
+        if (reclamo.tipo === 'especial' && reclamo.mision && reclamo.mision.activa) {
+            return res.status(400).json({ 
+                success: false, 
+                error: "Misión aún está activa. Para procesar reclamos, primero finalice la misión desde el panel de administración." 
+            });
+        }
+
         let montoOtorgado = 0;
-        // Si se aprueba, acreditar el saldo
-        if (estado === 'aprobado') {
-            // Determine monto a otorgar
-            if (reclamo.tipo === 'especial' && reclamo.mision && !reclamo.mision.activa && reclamo.mision.total_ganadores) {
-                // Mission is already finalized, give proportional share
-                montoOtorgado = parseFloat((parseFloat(reclamo.mision.valor) / reclamo.mision.total_ganadores).toFixed(2));
-            } else {
-                // Otherwise, give full amount (mission still active or not finalized yet)
-                montoOtorgado = parseFloat(reclamo.monto);
-            }
+        // Si se aprueba y la misión ya está finalizada, acreditar el saldo proporcional
+        if (estado === 'aprobado' && reclamo.tipo === 'especial' && reclamo.mision && !reclamo.mision.activa && reclamo.mision.total_ganadores) {
+            montoOtorgado = parseFloat((parseFloat(reclamo.mision.valor) / reclamo.mision.total_ganadores).toFixed(2));
             
             const creditoExistente = await CreditoUsuario.findOne({ where: { id_usuario: reclamo.id_usuario } });
             let nuevoMonto = montoOtorgado;
@@ -515,7 +516,7 @@ const procesarReclamo = async (req, res) => {
 
         await reclamo.update({ 
             estado,
-            monto_otorgado: estado === 'aprobado' ? montoOtorgado : 0
+            monto_otorgado: montoOtorgado
         });
 
         // Enviar notificación según estado
@@ -541,7 +542,7 @@ const procesarReclamo = async (req, res) => {
 
         res.json({
             success: true,
-            message: `Reclamo ${estado === 'aprobado' ? 'aprobado y saldo acreditado' : 'rechazado'} correctamente`,
+            message: `Reclamo ${estado} correctamente`,
             data: reclamo
         });
 
@@ -795,6 +796,122 @@ const finalizarMisionSeleccion = async (req, res) => {
 };
 
 /**
+ * Finalizar una misión de respuesta escrita, distribuyendo la recompensa entre los aprobados
+ */
+const finalizarMisionEscrita = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { id_mision } = req.body;
+
+        if (!id_mision) {
+            await transaction.rollback();
+            return res.status(400).json({ success: false, error: "Falta id_mision" });
+        }
+
+        // 1. Obtener la misión
+        const mision = await MisionEspecial.findByPk(id_mision, { transaction });
+        if (!mision) {
+            await transaction.rollback();
+            return res.status(404).json({ success: false, error: "Misión no encontrada" });
+        }
+        if (!mision.activa) {
+            await transaction.rollback();
+            return res.status(400).json({ success: false, error: "Misión ya está finalizada" });
+        }
+
+        // 2. Obtener todos los reclamos para esta misión
+        const reclamos = await MisionReclamo.findAll({
+            where: {
+                id_mision,
+                tipo: 'especial',
+                estado: ['aprobado', 'pendiente', 'rechazado']
+            },
+            include: [{
+                model: Usuario,
+                as: 'usuario',
+                attributes: ['id_usuario', 'nombre', 'email', 'imagen_url']
+            }],
+            transaction
+        });
+
+        // 3. Contar cuántos ya están aprobados (ganadores)
+        const ganadores = reclamos.filter(r => r.estado === 'aprobado');
+        const totalGanadores = ganadores.length;
+
+        // 4. Calcular recompensa proporcional
+        const valorTotal = parseFloat(mision.valor);
+        let recompensaPorGanador = 0;
+        if (totalGanadores > 0) {
+            recompensaPorGanador = parseFloat((valorTotal / totalGanadores).toFixed(2));
+        }
+
+        const ganadoresData = [];
+
+        // 5. Actualizar cada ganador con el monto correcto y ajustar saldo si es necesario
+        for (const reclamo of ganadores) {
+            // Ajustar el saldo: si ya se acreditó el monto completo, restar la diferencia
+            const montoPreviamenteAcreditado = parseFloat(reclamo.monto_otorgado || reclamo.monto);
+            const montoCorrecto = recompensaPorGanador;
+            const diferencia = montoCorrecto - montoPreviamenteAcreditado;
+
+            const creditoExistente = await CreditoUsuario.findOne({
+                where: { id_usuario: reclamo.id_usuario },
+                transaction
+            });
+
+            let nuevoMonto = creditoExistente ? parseFloat(creditoExistente.monto_credito) : 0;
+            nuevoMonto += diferencia;
+
+            await CreditoUsuario.upsert({
+                id_usuario: reclamo.id_usuario,
+                monto_credito: parseFloat(nuevoMonto.toFixed(2)),
+                fecha: new Date()
+            }, { transaction });
+
+            // Actualizar el reclamo con el monto correcto
+            await reclamo.update({
+                monto_otorgado: recompensaPorGanador
+            }, { transaction });
+
+            ganadoresData.push({
+                id_reclamo: reclamo.id_reclamo,
+                id_usuario: reclamo.id_usuario,
+                usuario: reclamo.usuario,
+                monto: recompensaPorGanador,
+                respuesta: reclamo.respuesta
+            });
+        }
+
+        // 6. Desactivar la misión y guardar el total de ganadores
+        await MisionEspecial.update(
+            {
+                activa: false,
+                total_ganadores: totalGanadores
+            },
+            { where: { id_mision }, transaction }
+        );
+
+        await transaction.commit();
+
+        res.json({
+            success: true,
+            message: `Misión finalizada. ${totalGanadores} usuarios premiados con $${recompensaPorGanador.toFixed(2)} cada uno.`,
+            data: {
+                totalGanadores,
+                valorTotal,
+                recompensaPorGanador,
+                ganadores: ganadoresData
+            }
+        });
+
+    } catch (error) {
+        if (transaction) await transaction.rollback();
+        console.error("Error al finalizar misión de respuesta escrita:", error);
+        res.status(500).json({ success: false, error: "Error interno del servidor" });
+    }
+};
+
+/**
  * Obtener estadísticas de una misión (Admin) con paginación
  */
 const getMisionStats = async (req, res) => {
@@ -886,6 +1003,15 @@ const procesarReclamosBulk = async (req, res) => {
             transaction
         });
 
+        // Si es una misión especial y está activa, no permitimos procesar (debe finalizar la misión primero)
+        if (reclamos.length > 0 && reclamos[0].tipo === 'especial' && reclamos[0].mision && reclamos[0].mision.activa) {
+            await transaction.rollback();
+            return res.status(400).json({ 
+                success: false, 
+                error: "Misión aún está activa. Para procesar reclamos, primero finalice la misión desde el panel de administración." 
+            });
+        }
+
         // Get mission details from first claim to determine monto_otorgado
         let mission = null;
         let montoOtorgadoPerClaim = null;
@@ -901,13 +1027,8 @@ const procesarReclamosBulk = async (req, res) => {
         for (const reclamo of reclamos) {
             let montoOtorgado = 0;
             
-            if (estado === 'aprobado') {
-                // Determine amount
-                if (montoOtorgadoPerClaim !== null) {
-                    montoOtorgado = montoOtorgadoPerClaim;
-                } else {
-                    montoOtorgado = parseFloat(reclamo.monto);
-                }
+            if (estado === 'aprobado' && montoOtorgadoPerClaim !== null) {
+                montoOtorgado = montoOtorgadoPerClaim;
                 
                 const creditoExistente = await CreditoUsuario.findOne({ 
                     where: { id_usuario: reclamo.id_usuario },
@@ -928,7 +1049,7 @@ const procesarReclamosBulk = async (req, res) => {
 
             await reclamo.update({ 
                 estado, 
-                monto_otorgado: estado === 'aprobado' ? montoOtorgado : 0 
+                monto_otorgado: montoOtorgado 
             }, { transaction });
             procesados++;
         }
@@ -1027,6 +1148,7 @@ module.exports = {
     procesarReclamo,
     getHistorialUsuario,
     finalizarMisionSeleccion,
+    finalizarMisionEscrita,
     getMisionStats,
     procesarReclamosBulk,
     getMisionGanadores

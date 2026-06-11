@@ -15,6 +15,7 @@ const {
     procesarReclamo,
     getHistorialUsuario,
     finalizarMisionSeleccion,
+    finalizarMisionEscrita,
     getMisionStats,
     procesarReclamosBulk,
     getMisionGanadores
@@ -35,6 +36,7 @@ router.post("/admin/especiales", authMiddleware, checkRole(['admin', 'sa', 'Admi
 router.put("/admin/especiales/:id", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, actualizarMisionAdmin);
 router.delete("/admin/especiales/:id", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, eliminarMisionAdmin);
 router.post("/admin/especiales/finalizar", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, finalizarMisionSeleccion);
+router.post("/admin/especiales/finalizar-escrita", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, finalizarMisionEscrita);
 router.get("/admin/especiales/:id/stats", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, getMisionStats);
 router.get("/admin/especiales/:id/ganadores", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, getMisionGanadores);
 router.post("/admin/especiales/reclamos/bulk", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, procesarReclamosBulk);
