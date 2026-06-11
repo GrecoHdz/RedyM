@@ -13,7 +13,9 @@ const {
     eliminarFotoPerfil,
     actualizarFotoIdentidad,
     eliminarFotoIdentidad,
-    cambioClave
+    cambioClave,
+    aprobarVerificacion,
+    rechazarVerificacion
 } = require("../controllers/UsuarioController");
 const { uploadProfile, uploadIdentity } = require("../config/cloudinary");
 
@@ -42,6 +44,10 @@ router.delete("/imagen-perfil/:id", authMiddleware, eliminarFotoPerfil);
 // GESTIÓN DE FOTO DE IDENTIDAD
 router.post("/identidad-foto/:id", authMiddleware, uploadIdentity.single('imagen'), actualizarFotoIdentidad);
 router.delete("/identidad-foto/:id", authMiddleware, eliminarFotoIdentidad);
+
+// GESTIÓN DE VERIFICACIÓN DE IDENTIDAD
+router.put("/verificar/:id", authMiddleware, aprobarVerificacion);
+router.put("/rechazar-verificacion/:id", authMiddleware, rechazarVerificacion);
 
 // ELIMINAR USUARIO (DELETE)
 router.delete("/:id", authMiddleware, eliminarUsuario);

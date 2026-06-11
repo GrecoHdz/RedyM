@@ -502,6 +502,18 @@ const actualizarFotoIdentidad = async (req, res) => {
             verificado: false
         });
 
+        // Enviar notificación de solicitud de verificación recibida
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'verificacion',
+                titulo: 'Solicitud de verificación recibida',
+                id_usuario: usuario.id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificación de verificación:", notifyError);
+        }
+
         res.status(200).json({
             success: true,
             message: "Identidad actualizada",
@@ -514,6 +526,76 @@ const actualizarFotoIdentidad = async (req, res) => {
     } catch (error) {
         console.error("Error identity upload:", error);
         res.status(500).json({ success: false, message: "Error", error: error.message });
+    }
+};
+
+// APROBAR VERIFICACIÓN DE IDENTIDAD
+const aprobarVerificacion = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const usuario = await Usuario.findByPk(id);
+        if (!usuario) {
+            return res.status(404).json({ success: false, message: "Usuario no encontrado" });
+        }
+
+        await usuario.update({ verificado: true });
+
+        // Enviar notificación de verificación aprobada
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'verificacion',
+                titulo: 'Identidad verificada correctamente ✅',
+                id_usuario: usuario.id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificación de verificación aprobada:", notifyError);
+        }
+
+        res.json({
+            success: true,
+            message: "Verificación aprobada",
+            data: { verificado: usuario.verificado }
+        });
+    } catch (error) {
+        console.error("Error al aprobar verificación:", error);
+        res.status(500).json({ success: false, message: "Error al aprobar verificación", error: error.message });
+    }
+};
+
+// RECHAZAR VERIFICACIÓN DE IDENTIDAD
+const rechazarVerificacion = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const usuario = await Usuario.findByPk(id);
+        if (!usuario) {
+            return res.status(404).json({ success: false, message: "Usuario no encontrado" });
+        }
+
+        await usuario.update({ verificado: false });
+
+        // Enviar notificación de verificación rechazada
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'verificacion',
+                titulo: 'Verificación de Identidad rechazado',
+                id_usuario: usuario.id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificación de verificación rechazada:", notifyError);
+        }
+
+        res.json({
+            success: true,
+            message: "Verificación rechazada",
+            data: { verificado: usuario.verificado }
+        });
+    } catch (error) {
+        console.error("Error al rechazar verificación:", error);
+        res.status(500).json({ success: false, message: "Error al rechazar verificación", error: error.message });
     }
 };
 
@@ -619,5 +701,7 @@ module.exports = {
     eliminarFotoPerfil,
     actualizarFotoIdentidad,
     eliminarFotoIdentidad,
-    cambioClave
+    cambioClave,
+    aprobarVerificacion,
+    rechazarVerificacion
 };

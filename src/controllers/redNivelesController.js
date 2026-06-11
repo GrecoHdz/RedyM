@@ -2,6 +2,7 @@ const { sequelize } = require("../config/database");
 const RedNiveles = require("../models/redNivelesModel");
 const Usuario = require("../models/usuariosModel");
 const CreditoUsuario = require("../models/creditoUsuariosModel");
+const NotificacionDestinatario = require("../models/notificacionesDestinatariosModel");
 const { Op } = require("sequelize");
 
 // Configuración de la red
@@ -380,6 +381,18 @@ const subirNivel = async (req, res) => {
         }, { transaction: t });
         console.log(`[subirNivel] 💰 Saldo Beneficiario ${id_beneficiario} actualizado a: $${montoFinalBen}`);
 
+        // Enviar notificación de comisión por expansión de red
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'financieros',
+                titulo: 'Comisión por expansión de red recibida ⚡',
+                id_usuario: id_beneficiario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificación de comisión:", notifyError);
+        }
+
         // 4. Actualizar nivel
         await nodo.update({ nivel_actual: siguienteNivel }, { transaction: t });
 
@@ -608,6 +621,18 @@ const procesarAutoUpgradeInterno = async (id_usuario, t_existente = null) => {
             fecha: new Date()
         }, { transaction: t });
         console.log(`[AutoUpgrade] 💰 Saldo Beneficiario ${id_beneficiario} actualizado a: $${montoFinalBen}`);
+
+        // Enviar notificación de comisión por expansión de red
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'financieros',
+                titulo: 'Comisión por expansión de red recibida ⚡',
+                id_usuario: id_beneficiario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificación de comisión:", notifyError);
+        }
         
         await nodo.update({ nivel_actual: siguienteNivel }, { transaction: t });
 

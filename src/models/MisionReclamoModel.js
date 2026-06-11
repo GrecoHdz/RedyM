@@ -46,6 +46,11 @@ const MisionReclamo = sequelize.define("MisionReclamo", {
         allowNull: false,
         defaultValue: 0.00
     },
+    monto_otorgado: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+        defaultValue: null
+    },
     respuesta: {
         type: DataTypes.TEXT,
         allowNull: true

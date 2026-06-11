@@ -1,4 +1,5 @@
 const { Op } = require("sequelize");
+const { sequelize } = require("../config/database");
 const Interaccion = require("../models/InteraccionModel");
 const Publicacion = require("../models/publicacionesModel");
 const Usuario = require("../models/usuariosModel");
@@ -193,6 +194,18 @@ const registrarInteraccion = async (req, res) => {
                 monto_credito: parseFloat(montoFinal.toFixed(2)),
                 fecha: new Date()
             });
+
+            // Enviar notificación de CashBack recibido
+            try {
+                await NotificacionDestinatario.notificar({
+                    tipo: 'financieros',
+                    titulo: 'CashBack recibido por interacción',
+                    id_usuario: id_usuario,
+                    creado_por: 'Sistema'
+                });
+            } catch (notifyError) {
+                console.error("Error al enviar notificación de CashBack:", notifyError);
+            }
         }
 
         res.status(201).json({
@@ -356,34 +369,60 @@ const obtenerInteraccionesPorUsuario = async (req, res) => {
             idsPadresNivel = hijos.map(h => h.id_usuario);
         }
 
-        // 4. Obtener reclamos de misiones (diarias y especiales) - SOLO APROBADAS
+        // 4. Obtener reclamos de misiones (diarias y especiales) - EXCLUIR PENDIENTES
         const reclamosMisiones = await MisionReclamo.findAll({
             where: { 
                 id_usuario,
-                estado: 'aprobado'
+                estado: { [Op.ne]: 'pendiente' }
             },
             include: [
                 {
                     model: MisionEspecial,
                     as: 'mision',
-                    attributes: ['titulo']
+                    attributes: ['titulo', 'total_ganadores']
                 }
             ],
             raw: true,
             nest: true
         });
 
-        const histMisiones = reclamosMisiones.map(m => ({
-            id_unico: `mision_${m.id_reclamo}`,
-            _isMision: true,
-            tipo: m.tipo === 'auto' ? 'mision_auto' : 'mision_especial',
-            descripcion: m.tipo === 'auto' ? 'Misión Diaria' : (m.mision?.titulo || 'Misión Especial'),
-            estado: m.estado,
-            respuesta: m.respuesta,
-            fecha: m.fecha,
-            monto: parseFloat(m.monto || 0),
-            monto_ganado: parseFloat(m.monto || 0)
-        }));
+        // 4.1 Get total ganadores por misión especial (para retrocompatibilidad con misiones sin total_ganadores)
+        const misionIds = reclamosMisiones
+            .filter(m => m.tipo === 'especial' && m.id_mision)
+            .map(m => m.id_mision)
+        
+        const totalGanadoresPorMision = {}
+        if (misionIds.length > 0) {
+            const counts = await MisionReclamo.findAll({
+                attributes: ['id_mision', [sequelize.fn('COUNT', sequelize.col('id_reclamo')), 'count']],
+                where: { id_mision: { [Op.in]: misionIds }, estado: 'aprobado', tipo: 'especial' },
+                group: ['id_mision'],
+                raw: true
+            })
+            counts.forEach(c => totalGanadoresPorMision[c.id_mision] = parseInt(c.count))
+        }
+
+        const histMisiones = reclamosMisiones.map(m => {
+            let totalGanadoresMision = m.mision?.total_ganadores
+            if (m.tipo === 'especial' && !totalGanadoresMision && totalGanadoresPorMision[m.id_mision]) {
+                totalGanadoresMision = totalGanadoresPorMision[m.id_mision]
+            }
+            
+            return {
+                id_unico: `mision_${m.id_reclamo}`,
+                _isMision: true,
+                id_mision: m.id_mision,
+                tipo: m.tipo === 'auto' ? 'mision_auto' : 'mision_especial',
+                descripcion: m.tipo === 'auto' ? 'Misión Diaria' : (m.mision?.titulo || 'Misión Especial'),
+                estado: m.estado,
+                respuesta: m.respuesta,
+                fecha: m.fecha,
+                monto: parseFloat(m.monto || 0),
+                monto_ganado: m.estado === 'aprobado' ? parseFloat(m.monto_otorgado || m.monto || 0) : 0,
+                monto_otorgado: parseFloat(m.monto_otorgado || m.monto || 0),
+                total_ganadores_mision: totalGanadoresMision
+            }
+        });
 
         // Combinar todas las listas y ordenar cronológicamente de forma descendente
         const historialCompleto = [...histInteracciones, ...comisionesMembresia, ...comisionesRedUpgrades, ...histMisiones].sort(

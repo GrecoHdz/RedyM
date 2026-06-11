@@ -16,7 +16,8 @@ const {
     getHistorialUsuario,
     finalizarMisionSeleccion,
     getMisionStats,
-    procesarReclamosBulk
+    procesarReclamosBulk,
+    getMisionGanadores
 } = require("../controllers/MisionController");
 
 // User routes (require authentication)
@@ -28,15 +29,19 @@ router.post("/reclamar/auto", authMiddleware, apiLimiter, reclamarMisionAuto);
 router.get("/especial", authMiddleware, apiLimiter, getMisionesEspeciales);
 router.post("/especial/reclamar", authMiddleware, apiLimiter, reclamarMisionEspecial);
 
-// Admin routes (require admin role)
+// Admin routes (require admin role) - specific routes first!
 router.get("/admin/especiales", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, listarMisionesAdmin);
 router.post("/admin/especiales", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, crearMisionAdmin);
 router.put("/admin/especiales/:id", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, actualizarMisionAdmin);
 router.delete("/admin/especiales/:id", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, eliminarMisionAdmin);
 router.post("/admin/especiales/finalizar", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, finalizarMisionSeleccion);
 router.get("/admin/especiales/:id/stats", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, getMisionStats);
+router.get("/admin/especiales/:id/ganadores", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, getMisionGanadores);
 router.post("/admin/especiales/reclamos/bulk", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, procesarReclamosBulk);
 router.get("/reclamos", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, getReclamos);
 router.put("/reclamos/:id", authMiddleware, checkRole(['admin', 'sa', 'Admin']), apiLimiter, procesarReclamo);
+
+// User route to see ganadores (public view without sensitive data)
+router.get("/especial/:id/ganadores", authMiddleware, apiLimiter, getMisionGanadores);
 
 module.exports = router;

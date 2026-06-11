@@ -1,6 +1,7 @@
 const Retiro = require("../models/retiroModel");
 const Usuario = require("../models/usuariosModel");
 const CreditoUsuario = require("../models/creditoUsuariosModel");
+const NotificacionDestinatario = require("../models/notificacionesDestinatariosModel");
 const { sequelize } = require("../config/database");
 
 const crearRetiro = async (req, res) => {
@@ -36,6 +37,19 @@ const crearRetiro = async (req, res) => {
         });
 
         await t.commit();
+
+        // Enviar notificación de nueva petición de retiro
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'financieros',
+                titulo: 'Nueva petición de retiro enviada',
+                id_usuario: id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificación de retiro:", notifyError);
+        }
+
         res.json({ success: true, data: retiro, message: "Solicitud de retiro enviada con éxito" });
     } catch (error) {
         if (t) await t.rollback();
@@ -101,6 +115,23 @@ const actualizarEstadoRetiro = async (req, res) => {
         await retiro.save({ transaction: t });
 
         await t.commit();
+
+        // Enviar notificación según el estado
+        try {
+            const titulo = estado === 'aprobado' 
+                ? 'Retiro de fondos aprobado ✅' 
+                : 'Retiro de fondos rechazado ❌';
+            
+            await NotificacionDestinatario.notificar({
+                tipo: 'financieros',
+                titulo: titulo,
+                id_usuario: retiro.id_usuario,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificación de retiro:", notifyError);
+        }
+
         res.json({ success: true, message: `Retiro ${estado} correctamente` });
     } catch (error) {
         if (t) await t.rollback();

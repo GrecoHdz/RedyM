@@ -661,6 +661,18 @@ const aprobarMembresia = async (req, res) => {
                 transaction: t
             });
 
+            // Enviar notificación de comisión por referido
+            try {
+                await NotificacionDestinatario.notificar({
+                    tipo: 'financieros',
+                    titulo: 'Comisión por referido recibida 💰',
+                    id_usuario: nodoRed.id_patrocinador,
+                    creado_por: 'Sistema'
+                });
+            } catch (notifyError) {
+                console.error("Error al enviar notificación de comisión:", notifyError);
+            }
+
             // (Aquí podrías registrar un movimiento en HistorialFinanciero si existiera)
         } else {
             // Si ya estaba en nivel 1+, es una renovación

@@ -43,6 +43,10 @@ const MisionEspecial = sequelize.define("mision_especial", {
         type: DataTypes.STRING(255),
         allowNull: true
     },
+    total_ganadores: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
     fecha_creacion: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW
