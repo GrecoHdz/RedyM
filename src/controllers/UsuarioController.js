@@ -32,7 +32,8 @@ const obtenerUsuarios = async (req, res) => {
         if (search) {
             whereCondition[Op.or] = [
                 { nombre: { [Op.like]: `%${search}%` } },
-                { identidad: { [Op.like]: `%${search}%` } }
+                { identidad: { [Op.like]: `%${search}%` } },
+                { email: { [Op.like]: `%${search}%` } }
             ];
         }
 
