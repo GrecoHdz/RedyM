@@ -125,6 +125,7 @@ NotificacionDestinatario.notificar = async function({ tipo, titulo, id_usuario, 
 
                         return webpush.sendNotification(pushSubscription, payload)
                             .catch(err => {
+                                console.error('Error enviando web push:', err);
                                 if (err.statusCode === 410 || err.statusCode === 404) {
                                     // Suscripción inválida, eliminarla
                                     return SuscripcionNotificacion.destroy({ 

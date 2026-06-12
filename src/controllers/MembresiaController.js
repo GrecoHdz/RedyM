@@ -543,7 +543,7 @@ const crearMembresia = async (req, res) => {
 
         const membresia = await Membresia.create(datosMembresia);
 
-        // Enviar notificación de pago recibido (en revisión)
+        // Enviar notificación de pago recibido al usuario
         try {
             await NotificacionDestinatario.notificar({
                 tipo: 'membresia',
@@ -553,6 +553,27 @@ const crearMembresia = async (req, res) => {
             });
         } catch (notifyError) {
             console.error("Error al enviar notificación de pago recibido:", notifyError);
+        }
+
+        // Enviar notificación a los administradores
+        try {
+            const Rol = require('../models/rolesModel');
+            const Usuario = require('../models/usuariosModel');
+            const rolAdmin = await Rol.findOne({ where: { nombre_rol: 'Admin' } });
+            
+            if (rolAdmin) {
+                const admins = await Usuario.findAll({ where: { id_rol: rolAdmin.id_rol } });
+                for (let admin of admins) {
+                    await NotificacionDestinatario.notificar({
+                        tipo: 'membresia',
+                        titulo: 'Pago de membresía recibido',
+                        id_usuario: admin.id_usuario,
+                        creado_por: 'Sistema'
+                    });
+                }
+            }
+        } catch (adminNotifyError) {
+            console.error('Error enviando notificación a admins:', adminNotifyError);
         }
 
         res.json(membresia);

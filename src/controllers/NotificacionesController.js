@@ -57,6 +57,7 @@ const enviarPushHelper = async (destinatarios, titulo, cuerpo, data = {}) => {
 
             return webpush.sendNotification(pushSubscription, payload)
                 .catch(err => {
+                    console.error('Error enviando web push (helper):', err);
                     if (err.statusCode === 410 || err.statusCode === 404) {
                         // La suscripción ya no es válida, eliminarla
                         return SuscripcionNotificacion.destroy({ where: { id_suscripcion: sub.id_suscripcion } });
