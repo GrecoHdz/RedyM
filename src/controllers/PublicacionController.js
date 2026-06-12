@@ -46,9 +46,9 @@ const crearPublicacion = async (req, res) => {
 
         const presupuestoNum = parseFloat(presupuesto || 0);
         
-        // El presupuesto mínimo es 50 solo para usuarios normales
-        if (!isAdmin && presupuestoNum < 50) {
-            return res.status(400).json({ success: false, message: "El presupuesto mínimo es L. 50" });
+        // El presupuesto mínimo es 10 solo para usuarios normales
+        if (!isAdmin && presupuestoNum < 10) {
+            return res.status(400).json({ success: false, message: "El presupuesto mínimo es L. 10" });
         }
 
         // Para admins, si no ponen presupuesto o es 0, les ponemos uno simbólico muy alto para que no se agote

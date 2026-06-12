@@ -9,6 +9,17 @@ const crearRetiro = async (req, res) => {
     try {
         const { id_usuario, monto, detalles_cuenta } = req.body;
 
+        const usuario = await Usuario.findByPk(id_usuario, { transaction: t });
+        if (!usuario) {
+            await t.rollback();
+            return res.status(404).json({ success: false, message: "Usuario no encontrado" });
+        }
+
+        if (!usuario.verificado) {
+            await t.rollback();
+            return res.status(400).json({ success: false, message: "El usuario debe estar verificado para retirar fondos" });
+        }
+
         if (!monto || monto <= 0) {
             await t.rollback();
             return res.status(400).json({ success: false, message: "El monto debe ser mayor a 0" });

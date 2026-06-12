@@ -75,8 +75,19 @@ const getGlobalStats = async (req, res) => {
             ingresosPublicaciones,
             creditosCirculante
         ] = await Promise.all([
-            Usuario.count({ where: dateFilterUsuario }),
-            Membresia.count({ where: { estado: 'activa', ...dateFilter } }),
+            Usuario.count({ 
+                where: { 
+                    ...dateFilterUsuario,
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
+                } 
+            }),
+            Membresia.count({ 
+                where: { 
+                    estado: 'activa', 
+                    ...dateFilter,
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
+                } 
+            }),
             // Membresías en período de gracia: estado 'activa', pero fecha de vencimiento (fecha + 30 días) ya pasó, y la fecha actual está dentro de (fecha de vencimiento + diasGracia)
             Membresia.count({
                 where: {
@@ -84,7 +95,8 @@ const getGlobalStats = async (req, res) => {
                     fecha: {
                         [Op.lte]: sequelize.literal(`DATE_SUB(CURDATE(), INTERVAL 30 DAY)`) // Fecha de inicio hace más de 30 días
                     },
-                    [Op.and]: sequelize.literal(`DATE_ADD(fecha, INTERVAL 30 DAY) <= CURDATE() AND DATE_ADD(fecha, INTERVAL (30 + ${diasGracia}) DAY) >= CURDATE()`)
+                    [Op.and]: sequelize.literal(`DATE_ADD(fecha, INTERVAL 30 DAY) <= CURDATE() AND DATE_ADD(fecha, INTERVAL (30 + ${diasGracia}) DAY) >= CURDATE()`),
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 }
             }),
             // Membresías realmente vencidas: estado 'vencida' O estado 'activa' pero ya fuera del período de gracia
@@ -96,22 +108,37 @@ const getGlobalStats = async (req, res) => {
                             estado: 'activa',
                             [Op.and]: sequelize.literal(`DATE_ADD(fecha, INTERVAL (30 + ${diasGracia}) DAY) < CURDATE()`)
                         }
-                    ]
+                    ],
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 }
             }),
             Publicacion.count({ 
                 where: { 
                     estado: 'activa', 
-                    presupuesto_restante: { [Op.gt]: 0.00 }
+                    presupuesto_restante: { [Op.gt]: 0.00 },
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 } 
             }),
             Publicacion.count({ 
                 where: { 
-                    presupuesto_restante: { [Op.lte]: 0.00 }
+                    presupuesto_restante: { [Op.lte]: 0.00 },
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 } 
             }),
-            Membresia.sum('monto', { where: { estado: 'activa', ...dateFilter } }),
-            Publicacion.sum('presupuesto', { where: { estado: 'activa', ...dateFilter } }),
+            Membresia.sum('monto', { 
+                where: { 
+                    estado: 'activa', 
+                    ...dateFilter,
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
+                } 
+            }),
+            Publicacion.sum('presupuesto', { 
+                where: { 
+                    estado: 'activa', 
+                    ...dateFilter,
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
+                } 
+            }),
             CreditoUsuario.sum('monto_credito')
         ]);
 
@@ -340,6 +367,23 @@ const getKpiDetails = async (req, res) => {
         const { type, page = 1, limit = 10, search = '', startDate, endDate } = req.query;
         const offset = (page - 1) * limit;
 
+        // Obtener IDs de usuarios administradores
+        const adminRoles = await Rol.findAll({
+            where: {
+                nombre_rol: { [Op.in]: ['admin', 'sa', 'Admin'] }
+            },
+            attributes: ['id_rol']
+        });
+        const adminRoleIds = adminRoles.map(r => r.id_rol);
+        
+        const adminUsers = await Usuario.findAll({
+            where: {
+                id_rol: { [Op.in]: adminRoleIds }
+            },
+            attributes: ['id_usuario']
+        });
+        const adminIds = adminUsers.map(u => u.id_usuario);
+
         const diasGraciaConfigObj = await Config.findOne({ where: { tipo_config: 'dias_gracia_membresia' }, attributes: ['valor'] });
         const diasGracia = parseInt(diasGraciaConfigObj?.valor || '5', 10);
 
@@ -363,7 +407,8 @@ const getKpiDetails = async (req, res) => {
                     [Op.or]: [
                         { nombre: { [Op.like]: `%${search}%` } },
                         { email: { [Op.like]: `%${search}%` } }
-                    ]
+                    ],
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 };
                 attributes = ['id_usuario', 'nombre', 'email', ['fecha_registro', 'fecha_display']];
                 break;
@@ -372,7 +417,8 @@ const getKpiDetails = async (req, res) => {
                 model = Membresia;
                 where = {
                     estado: 'activa',
-                    fecha: dateFilter
+                    fecha: dateFilter,
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 };
                 attributes = ['id_membresia', 'id_usuario', ['monto', 'monto_ganado'], 'estado', ['fecha', 'fecha_display']];
                 include = [{
@@ -393,7 +439,8 @@ const getKpiDetails = async (req, res) => {
                 where = {
                     estado: 'activa',
                     fecha: dateFilter,
-                    [Op.and]: sequelize.literal(`DATE_ADD(fecha, INTERVAL 30 DAY) <= CURDATE() AND DATE_ADD(fecha, INTERVAL (30 + ${diasGracia}) DAY) >= CURDATE()`)
+                    [Op.and]: sequelize.literal(`DATE_ADD(fecha, INTERVAL 30 DAY) <= CURDATE() AND DATE_ADD(fecha, INTERVAL (30 + ${diasGracia}) DAY) >= CURDATE()`),
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 };
                 attributes = [
                     'id_membresia', 
@@ -426,7 +473,8 @@ const getKpiDetails = async (req, res) => {
                             estado: 'activa',
                             [Op.and]: sequelize.literal(`DATE_ADD(fecha, INTERVAL (30 + ${diasGracia}) DAY) < CURDATE()`)
                         }
-                    ]
+                    ],
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 };
                 attributes = [
                     'id_membresia', 
@@ -449,12 +497,23 @@ const getKpiDetails = async (req, res) => {
                 }];
                 break;
             case 'publicacionesActivas':
+                model = Publicacion;
+                where = {
+                    estado: 'activa',
+                    presupuesto_restante: { [Op.gt]: 0.00 },
+                    content: { [Op.like]: `%${search}%` },
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
+                };
+                attributes = ['id_publicacion', 'content', ['presupuesto_restante', 'monto_ganado'], 'estado', ['fecha', 'fecha_display']];
+                include = [{ model: Usuario, as: 'usuario', attributes: ['nombre'] }];
+                break;
             case 'ingresosPublicaciones':
                 model = Publicacion;
                 where = {
                     estado: 'activa',
                     presupuesto_restante: { [Op.gt]: 0.00 },
-                    content: { [Op.like]: `%${search}%` }
+                    content: { [Op.like]: `%${search}%` },
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 };
                 attributes = ['id_publicacion', 'content', ['presupuesto_restante', 'monto_ganado'], 'estado', ['fecha', 'fecha_display']];
                 include = [{ model: Usuario, as: 'usuario', attributes: ['nombre'] }];
@@ -464,7 +523,8 @@ const getKpiDetails = async (req, res) => {
                 model = Membresia;
                 where = {
                     estado: 'activa',
-                    fecha: dateFilter
+                    fecha: dateFilter,
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 };
                 attributes = ['id_membresia', 'id_usuario', ['monto', 'monto_ganado'], 'estado', ['fecha', 'fecha_display']];
                 include = [{ 
@@ -484,7 +544,8 @@ const getKpiDetails = async (req, res) => {
                 model = Publicacion;
                 where = {
                     presupuesto_restante: { [Op.lte]: 0.00 },
-                    content: { [Op.like]: `%${search}%` }
+                    content: { [Op.like]: `%${search}%` },
+                    ...(adminIds.length > 0 ? { id_usuario: { [Op.notIn]: adminIds } } : {})
                 };
                 attributes = ['id_publicacion', 'content', 'estado', ['fecha', 'fecha_display']];
                 include = [{ model: Usuario, as: 'usuario', attributes: ['nombre'] }];
