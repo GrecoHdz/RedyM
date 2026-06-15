@@ -24,7 +24,6 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 // Helper para enviar notificaciones push
 const enviarPushHelper = async (destinatarios, titulo, cuerpo, data = {}) => {
     try {
-        console.log(`🚀 [Push Helper] Intentando enviar notificación: "${titulo}" a ${destinatarios.length} destinatarios`);
         const userIds = destinatarios.map(d => d.id_usuario);
 
         // Obtener suscripciones de los usuarios afectados
@@ -34,10 +33,7 @@ const enviarPushHelper = async (destinatarios, titulo, cuerpo, data = {}) => {
             }
         });
 
-        console.log(`🚀 [Push Helper] Suscripciones encontradas: ${subscriptions.length} para los usuarios:`, userIds);
-
         if (subscriptions.length === 0) {
-            console.log('⚠️ [Push Helper] No hay suscripciones para enviar notificaciones.');
             return;
         }
 
@@ -61,24 +57,19 @@ const enviarPushHelper = async (destinatarios, titulo, cuerpo, data = {}) => {
                 }
             });
 
-            console.log(`🚀 [Push Helper] Enviando a endpoint: ${sub.endpoint.substring(0, 30)}...`);
-
             return webpush.sendNotification(pushSubscription, payload)
-                .then(res => console.log('✅ [Push Helper] Push enviado exitosamente a', sub.id_usuario, res.statusCode))
                 .catch(err => {
-                    console.error(`❌ [Push Helper] Error enviando web push a usuario ${sub.id_usuario}:`, err.statusCode, err.body);
                     if (err.statusCode === 410 || err.statusCode === 404) {
                         // La suscripción ya no es válida, eliminarla
-                        console.log(`🗑️ [Push Helper] Eliminando suscripción inactiva ${sub.id_suscripcion}`);
                         return SuscripcionNotificacion.destroy({ where: { id_suscripcion: sub.id_suscripcion } });
                     }
+                    console.error(`Error enviando web push a usuario ${sub.id_usuario}:`, err.statusCode, err.body);
                 });
         });
 
         await Promise.allSettled(notifications);
-        console.log('🏁 [Push Helper] Proceso de envío finalizado');
     } catch (error) {
-        console.error('❌ Error general en enviarPushHelper:', error);
+        console.error('Error general en enviarPushHelper:', error);
     }
 };
 
