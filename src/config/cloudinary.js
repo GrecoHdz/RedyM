@@ -34,44 +34,9 @@ const profileStorage = new CloudinaryStorage({
   }
 });
 
-// Configuración para paquetes
-const packageStorage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'RedyMercadeo/paquetes',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-    transformation: [{
-      width: 1200,
-      height: 900,
-      crop: 'fill',
-      gravity: 'auto',
-      quality: 'auto:best',
-      fetch_format: 'auto',
-      format: 'webp',
-      dpr: 'auto',
-      effect: 'sharpen:100',
-      flags: 'lossy',
-      secure: true
-    }],
-    resource_type: 'image'
-  }
-});
-
 // Middleware para subir imágenes de perfil
 exports.uploadProfile = multer({
   storage: profileStorage,
-  limits: { fileSize: 15 * 1024 * 1024 }, // Aumentado a 15MB para permitir mayor calidad
-  fileFilter: (_, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
-      return cb(new Error('Solo se permiten archivos de imagen (JPG, JPEG, PNG, WEBP)'), false);
-    }
-    cb(null, true);
-  }
-});
-
-// Middleware para subir imágenes de paquetes
-exports.uploadPackage = multer({
-  storage: packageStorage,
   limits: { fileSize: 15 * 1024 * 1024 }, // Aumentado a 15MB para permitir mayor calidad
   fileFilter: (_, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
@@ -121,12 +86,12 @@ const postStorage = new CloudinaryStorage({
 // Middleware para subir archivos de publicaciones
 exports.uploadPost = multer({
   storage: postStorage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // Límite de 10MB según requerimiento
+  limits: { fileSize: 50 * 1024 * 1024 }, // Límite de 50MB según requerimiento
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
-        cb(null, true);
+      cb(null, true);
     } else {
-        cb(new Error('Solo se permiten imágenes y videos'), false);
+      cb(new Error('Solo se permiten imágenes y videos'), false);
     }
   }
 });
