@@ -598,8 +598,54 @@ const getReferralNames = async (req, res) => {
     }
 };
 
+/**
+ * Obtener conteo de todos los elementos pendientes para el panel de administración
+ */
+const getPendingCounts = async (req, res) => {
+    try {
+        const SolicitudUpgrade = require("../models/solicitudesUpgradeModel");
+        
+        const [
+            membresias,
+            solicitudesNivel,
+            publicaciones,
+            identidad,
+            retiros
+        ] = await Promise.all([
+            Membresia.count({ where: { estado: 'pendiente' } }),
+            SolicitudUpgrade.count({ where: { estado: 'pendiente' } }),
+            Publicacion.count({ where: { estado: 'verificando_pago' } }),
+            Usuario.count({
+                where: {
+                    identidad_url: { [Op.ne]: null },
+                    verificado: false
+                }
+            }),
+            Retiro.count({ where: { estado: 'pendiente' } })
+        ]);
+
+        const total = membresias + solicitudesNivel + publicaciones + identidad + retiros;
+
+        res.json({
+            success: true,
+            data: {
+                membresias,
+                solicitudes_nivel: solicitudesNivel,
+                publicaciones,
+                identidad,
+                retiros,
+                total
+            }
+        });
+    } catch (error) {
+        console.error("Error al obtener conteo de pendientes:", error);
+        res.status(500).json({ success: false, error: "Error al obtener conteo de pendientes" });
+    }
+};
+
 module.exports = {
     getGlobalStats,
     getKpiDetails,
-    getReferralNames
+    getReferralNames,
+    getPendingCounts
 };

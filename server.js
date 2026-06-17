@@ -88,22 +88,25 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Importar Rutas  
-app.use("/auth", authRoutes);
-app.use("/usuarios", usuarioRoutes);
-app.use("/ciudad", ciudadRoutes);
-app.use("/membresia", membresiaRoutes);
-app.use("/notificaciones", notificacionesRoutes);
-app.use("/cuentas", cuentasRoutes);
-app.use("/publicaciones", publicacionRoutes);
-app.use("/interacciones", interaccionRoutes);
-app.use("/credito", creditoRoutes);
-app.use("/config", configRoutes);
-app.use("/red", redNivelesRoutes);
-app.use("/retiros", retiroRoutes);
-app.use("/red-solicitudes", solicitudesUpgradeRoutes);
-app.use("/misiones", misionRoutes);
-app.use("/estadisticas", estadisticasRoutes);
+// Importar limitadores de tasa
+const { authLimiter, apiLimiter } = require("./src/middlewares/rateLimiters");
+
+// Importar Rutas e integrar limitadores
+app.use("/auth", authLimiter, authRoutes);
+app.use("/usuarios", apiLimiter, usuarioRoutes);
+app.use("/ciudad", apiLimiter, ciudadRoutes);
+app.use("/membresia", apiLimiter, membresiaRoutes);
+app.use("/notificaciones", apiLimiter, notificacionesRoutes);
+app.use("/cuentas", apiLimiter, cuentasRoutes);
+app.use("/publicaciones", apiLimiter, publicacionRoutes);
+app.use("/interacciones", apiLimiter, interaccionRoutes);
+app.use("/credito", apiLimiter, creditoRoutes);
+app.use("/config", apiLimiter, configRoutes);
+app.use("/red", apiLimiter, redNivelesRoutes);
+app.use("/retiros", apiLimiter, retiroRoutes);
+app.use("/red-solicitudes", apiLimiter, solicitudesUpgradeRoutes);
+app.use("/misiones", apiLimiter, misionRoutes);
+app.use("/estadisticas", apiLimiter, estadisticasRoutes);
 
 // Iniciar servidor
 const PORT = process.env.PORT || 4000;
