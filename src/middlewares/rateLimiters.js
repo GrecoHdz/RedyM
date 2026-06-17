@@ -12,11 +12,15 @@ const jwt = require('jsonwebtoken');
 const authLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hora en milisegundos
   max: 6, // Máximo 6 solicitudes por ventana
+  statusCode: 429, // Código de estado HTTP para límite excedido
   standardHeaders: true, // Devuelve los headers estándar de rate limit (X-RateLimit-*)
   legacyHeaders: false, // Deshabilita los headers X-RateLimit-* obsoletos
   message: {
     status: 429,
     message: 'Demasiados intentos de acceso. Por favor, inténtelo de nuevo después de una hora.'
+  },
+  handler: (req, res, next, options) => {
+    res.status(options.statusCode).json(options.message);
   },
   // Personalizar la clave para el limitador (por defecto es la IP)
   keyGenerator: (req) => {
@@ -33,11 +37,15 @@ const authLimiter = rateLimit({
 const apiLimiter = rateLimit({
   windowMs: 2 * 60 * 1000, // 2 minutos en milisegundos
   max: 200, // Máximo 200 solicitudes por ventana
+  statusCode: 429, // Código de estado HTTP para límite excedido
   standardHeaders: true, // Devuelve los headers estándar de rate limit (X-RateLimit-*)
   legacyHeaders: false, // Deshabilita los headers X-RateLimit-* obsoletos
   message: {
     status: 429,
     message: 'Demasiadas solicitudes. Por favor, inténtelo de nuevo después de 2 minutos.'
+  },
+  handler: (req, res, next, options) => {
+    res.status(options.statusCode).json(options.message);
   },
   // Personalizar la clave para el limitador usando el ID de usuario del token JWT
   keyGenerator: (req) => {
