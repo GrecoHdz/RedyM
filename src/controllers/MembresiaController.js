@@ -696,7 +696,26 @@ const aprobarMembresia = async (req, res) => {
             // (Aquí podrías registrar un movimiento en HistorialFinanciero si existiera)
         } else {
             // Si ya estaba en nivel 1+, es una renovación
-            // Aquí podrías implementar lógica de renovación (ej. extender fecha de vencimiento)
+            if (nodoRed && nodoRed.id_padre) {
+                console.log(`[AprobarMembresia-Renovacion] Acreditando renovación de ${id_usuario} al padre ${nodoRed.id_padre} por monto ${membresia.monto}`);
+                await CreditoUsuario.increment('monto_credito', {
+                    by: membresia.monto,
+                    where: { id_usuario: nodoRed.id_padre },
+                    transaction: t
+                });
+
+                // Enviar notificación al padre
+                try {
+                    await NotificacionDestinatario.notificar({
+                        tipo: 'financieros',
+                        titulo: 'Comisión residual por renovación mensual 💰',
+                        id_usuario: nodoRed.id_padre,
+                        creado_por: 'Sistema'
+                    });
+                } catch (notifyError) {
+                    console.error("Error al enviar notificación de renovación al padre:", notifyError);
+                }
+            }
         }
 
         await membresia.update({ estado: 'activa' }, { transaction: t });

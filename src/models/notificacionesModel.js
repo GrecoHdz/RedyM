@@ -45,6 +45,7 @@ const Notificacion = sequelize.define("Notificacion", {
          // Financieros y Comisiones
          { tipo: 'financieros', titulo: 'Comisión por referido recibida 💰', creado_por: 'Sistema' },
          { tipo: 'financieros', titulo: 'Comisión por expansión de red recibida ⚡', creado_por: 'Sistema' },
+         { tipo: 'financieros', titulo: 'Comisión residual por renovación mensual 💰', creado_por: 'Sistema' },
          { tipo: 'financieros', titulo: 'Retiro de fondos aprobado ✅', creado_por: 'Sistema' },
          { tipo: 'financieros', titulo: 'Retiro de fondos rechazado ❌', creado_por: 'Sistema' },
          { tipo: 'financieros', titulo: 'Nueva petición de retiro enviada', creado_por: 'Sistema' },
