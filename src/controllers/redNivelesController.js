@@ -660,7 +660,6 @@ const actualizarRedCompleta = async (req, res) => {
 
         // 1. Obtener todos los usuarios registrados
         const usuarios = await Usuario.findAll({
-            order: [['id_usuario', 'ASC']],
             transaction: t
         });
 
@@ -674,22 +673,33 @@ const actualizarRedCompleta = async (req, res) => {
         const diasPermitidos = 30 + diasGracia;
         const hoy = new Date();
 
-        // Mapa para controlar la vigencia del usuario en la red
+        // Mapa para controlar la vigencia del usuario en la red y su fecha de pago
         const usuarioActivoMap = {};
+        const usuariosConFechaPago = [];
         
         // La cuenta raíz siempre está activa
         usuarioActivoMap[rootId] = true;
 
         const Membresia = require("../models/membresiaModel");
 
-        // 3. Evaluar membresías
+        // 3. Evaluar membresías y obtener la fecha del primer pago
         for (const usuario of usuarios) {
             const id_usuario = usuario.id_usuario;
-            if (id_usuario === rootId) continue;
+            if (id_usuario === rootId) {
+                usuariosConFechaPago.push({
+                    usuario,
+                    fechaPago: new Date(0) // Forzar raíz al principio
+                });
+                continue;
+            }
 
             // Si el estado del usuario es inactivo o deshabilitado, se saca de la red
             if (usuario.estado !== 'activo') {
                 usuarioActivoMap[id_usuario] = false;
+                usuariosConFechaPago.push({
+                    usuario,
+                    fechaPago: new Date(usuario.fecha_registro || 0)
+                });
                 continue;
             }
 
@@ -716,13 +726,32 @@ const actualizarRedCompleta = async (req, res) => {
             }
 
             usuarioActivoMap[id_usuario] = activo;
+
+            // Obtener la fecha de pago de la membresía más antigua (activa o vencida)
+            const primerMembresia = await Membresia.findOne({
+                where: {
+                    id_usuario,
+                    estado: { [Op.in]: ['activa', 'vencida'] }
+                },
+                order: [['fecha', 'ASC']],
+                transaction: t
+            });
+
+            const fechaPago = primerMembresia ? new Date(primerMembresia.fecha) : new Date(usuario.fecha_registro || 0);
+            usuariosConFechaPago.push({
+                usuario,
+                fechaPago
+            });
         }
+
+        // Ordenar usuarios cronológicamente por su fecha de pago
+        usuariosConFechaPago.sort((a, b) => a.fechaPago - b.fechaPago);
 
         // 3b. Calcular la próxima fecha de vencimiento entre todos los usuarios activos en red
         // Buscamos la membresía activa más antigua (la que vence primero)
         let proximaFechaVencimiento = null;
-        for (const usuario of usuarios) {
-            const id_usuario = usuario.id_usuario;
+        for (const item of usuariosConFechaPago) {
+            const id_usuario = item.usuario.id_usuario;
             if (id_usuario === rootId) continue;
             if (!usuarioActivoMap[id_usuario]) continue;
 
@@ -755,7 +784,8 @@ const actualizarRedCompleta = async (req, res) => {
         );
 
         // 5. Asegurar existencia de registros en RedNiveles y desactivar los que corresponden
-        for (const usuario of usuarios) {
+        for (const item of usuariosConFechaPago) {
+            const usuario = item.usuario;
             const id_usuario = usuario.id_usuario;
             if (id_usuario === rootId) continue;
 
@@ -778,8 +808,9 @@ const actualizarRedCompleta = async (req, res) => {
             }
         }
 
-        // 6. Colocar de forma secuencial y en orden (por id_usuario ASC) a los usuarios activos
-        for (const usuario of usuarios) {
+        // 6. Colocar de forma secuencial y en orden (por fecha de pago) a los usuarios activos
+        for (const item of usuariosConFechaPago) {
+            const usuario = item.usuario;
             const id_usuario = usuario.id_usuario;
             if (id_usuario === rootId) continue;
 
