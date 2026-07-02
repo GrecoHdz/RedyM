@@ -329,7 +329,7 @@ const obtenerProgresoMembresia = async (req, res) => {
                 raw: true
             }),
             Config.findOne({
-                where: { tipo_config: 'membresia' },
+                where: { tipo_config: 'valor_membresia' },
                 raw: true
             }),
             Config.findOne({
@@ -394,7 +394,7 @@ const obtenerProgresoMembresia = async (req, res) => {
         hoy.setHours(0, 0, 0, 0);
 
         // Ordenar fechas de más reciente a más antigua
-        const fechasOrdenadas = fechasMembresias.sort((a, b) => b - a);
+        let fechasOrdenadas = fechasMembresias.sort((a, b) => b - a);
 
         // Calcular meses consecutivos verificando gaps entre pagos
         let mesesConsecutivos = 0;
@@ -446,12 +446,30 @@ const obtenerProgresoMembresia = async (req, res) => {
             } 
             // 2. Caso: Periodo de gracia (entre 30 y 30+diasGracia)
             else if (diffDiasNotif >= 30) {
-                await NotificacionDestinatario.notificar({
-                    tipo: 'membresia',
-                    titulo: 'Aviso: Tu membresía vence pronto (Periodo de gracia)',
-                    id_usuario: req.params.id_usuario,
-                    creado_por: 'Sistema'
-                });
+                let autoRenovada = await intentarAutoRenovacion(req.params.id_usuario, valorMembresia);
+
+                if (!autoRenovada) {
+                    await NotificacionDestinatario.notificar({
+                        tipo: 'membresia',
+                        titulo: 'Aviso: Tu membresía vence pronto (Periodo de gracia)',
+                        id_usuario: req.params.id_usuario,
+                        creado_por: 'Sistema'
+                    });
+                } else {
+                    // Si se auto-renovó, debemos volver a cargar las fechas de membresía
+                    const nuevasMembresias = await Membresia.findAll({
+                        where: {
+                            id_usuario: req.params.id_usuario,
+                            estado: ['activa', 'vencida']
+                        },
+                        order: [['fecha', 'ASC']],
+                        raw: true
+                    });
+                    
+                    fechasOrdenadas = nuevasMembresias
+                        .map(m => new Date(m.fecha))
+                        .sort((a, b) => b - a);
+                }
             }
         } catch (notifErr) {
             console.error("Error al procesar notificaciones automáticas de vencimiento:", notifErr);
@@ -628,7 +646,190 @@ const eliminarMembresia = async (req, res) => {
     }
 };
 
-// Aprobar membresía y colocar en la red si es necesario
+// Intentar auto-renovación de membresía si el usuario tiene saldo suficiente
+const intentarAutoRenovacion = async (id_usuario, valorMembresia, tPadre = null) => {
+    let autoRenovada = false;
+    try {
+        console.log(`[AutoRenovacion] 🔍 Iniciando auto-renovación para usuario ${id_usuario}. Valor membresía esperado: $${valorMembresia}`);
+        const saldo = await CreditoUsuario.findOne({ where: { id_usuario } });
+        
+        if (saldo) {
+            console.log(`[AutoRenovacion] 💰 Saldo actual del usuario ${id_usuario}: $${saldo.monto_credito}`);
+        } else {
+            console.log(`[AutoRenovacion] ❌ No se encontró billetera de saldo para el usuario ${id_usuario}`);
+        }
+
+        if (saldo && parseFloat(saldo.monto_credito) >= parseFloat(valorMembresia)) {
+            console.log(`[AutoRenovacion] ✅ Saldo suficiente. Descontando $${valorMembresia} y procesando renovación...`);
+            const tAuto = tPadre || await sequelize.transaction();
+            try {
+                // Descontar saldo
+                await CreditoUsuario.decrement('monto_credito', {
+                    by: valorMembresia,
+                    where: { id_usuario },
+                    transaction: tAuto
+                });
+
+                // Crear nueva membresía pendiente
+                const nuevaMembresia = await Membresia.create({
+                    id_usuario,
+                    monto: valorMembresia,
+                    fecha: new Date(),
+                    estado: 'pendiente',
+                    num_transaccion: 'AUTO_RENOVACION_SISTEMA'
+                }, { transaction: tAuto });
+
+                // Aprobar y colocar en red (o renovar)
+                await _aprobarMembresiaInterno(nuevaMembresia, tAuto);
+
+                if (!tPadre) await tAuto.commit();
+                autoRenovada = true;
+                console.log(`[AutoRenovacion] ✨ Auto-renovación completada exitosamente para usuario ${id_usuario}`);
+
+                // Notificar al usuario de la auto-renovación
+                await NotificacionDestinatario.notificar({
+                    tipo: 'membresia',
+                    titulo: 'Auto-renovación de membresía cobrada de tu saldo 🔄',
+                    id_usuario,
+                    creado_por: 'Sistema'
+                });
+            } catch (errAuto) {
+                if (!tPadre) await tAuto.rollback();
+                console.error("Error en auto-renovación interna:", errAuto);
+            }
+        } else if (saldo) {
+             console.log(`[AutoRenovacion] ⚠️ Saldo insuficiente ($${saldo.monto_credito}) para cubrir $${valorMembresia}`);
+        }
+    } catch (err) {
+        console.error("Error consultando saldo para auto-renovación:", err);
+    }
+    return autoRenovada;
+};
+
+// Función interna para aprobar membresía (puede ser llamada por auto-renovación)
+const _aprobarMembresiaInterno = async (membresia, t) => {
+    const id_usuario = membresia.id_usuario;
+
+    // 2. Obtener el registro de red del usuario
+    const nodoRed = await RedNiveles.findOne({ where: { id_usuario }, transaction: t });
+    if (!nodoRed) throw new Error("Registro de red no encontrado para el usuario");
+
+    let lugar = null;
+
+    // 3. Si el usuario está en Nivel 0 (Pendiente de activación inicial)
+    if (nodoRed.nivel_actual === 0) {
+        console.log(`[_aprobarMembresiaInterno] Colocando usuario ${id_usuario} en la red desde patrocinador ${nodoRed.id_patrocinador}`);
+        
+        // Buscar lugar en la red por derrame desde su patrocinador
+        lugar = await encontrarPosicionSiguiente(nodoRed.id_patrocinador);
+
+        // Si el patrocinador no tiene lugar (o red llena bajo él), buscar desde la raíz (Primer usuario)
+        if (!lugar) {
+            console.log(`[_aprobarMembresiaInterno] Sponsor ${nodoRed.id_patrocinador} full, buscando desde raíz`);
+            const firstUser = await Usuario.findOne({ order: [['id_usuario', 'ASC']], attributes: ['id_usuario'] });
+            const rootId = firstUser ? firstUser.id_usuario : 1;
+            lugar = await encontrarPosicionSiguiente(rootId);
+        }
+
+        if (!lugar) throw new Error("No hay espacios disponibles en la red global");
+
+        console.log(`[_aprobarMembresiaInterno] Lugar encontrado: Padre=${lugar.id_padre}, Posicion=${lugar.posicion}`);
+
+        // Actualizar nodo de red con posición y nivel 1
+        await nodoRed.update({
+            id_padre: lugar.id_padre,
+            posicion: lugar.posicion,
+            nivel_actual: 1
+        }, { transaction: t });
+
+        // Pagar comisión al patrocinador (100% de la membresía inicial)
+        // Usamos el monto pagado en la membresía
+        await CreditoUsuario.increment('monto_credito', {
+            by: membresia.monto,
+            where: { id_usuario: nodoRed.id_patrocinador },
+            transaction: t
+        });
+
+        // Enviar notificación de comisión por referido
+        try {
+            await NotificacionDestinatario.notificar({
+                tipo: 'financieros',
+                titulo: 'Comisión por referido recibida 💰',
+                id_usuario: nodoRed.id_patrocinador,
+                creado_por: 'Sistema'
+            });
+        } catch (notifyError) {
+            console.error("Error al enviar notificación de comisión:", notifyError);
+        }
+
+    } else {
+        // Si ya estaba en nivel 1+, es una renovación
+        if (nodoRed && nodoRed.id_padre) {
+            console.log(`[_aprobarMembresiaInterno-Renovacion] Acreditando renovación de ${id_usuario} al padre ${nodoRed.id_padre} por monto ${membresia.monto}`);
+            await CreditoUsuario.increment('monto_credito', {
+                by: membresia.monto,
+                where: { id_usuario: nodoRed.id_padre },
+                transaction: t
+            });
+
+            // Enviar notificación al padre
+            try {
+                await NotificacionDestinatario.notificar({
+                    tipo: 'financieros',
+                    titulo: 'Comisión residual por renovación mensual 💰',
+                    id_usuario: nodoRed.id_padre,
+                    creado_por: 'Sistema'
+                });
+            } catch (notifyError) {
+                console.error("Error al enviar notificación de renovación al padre:", notifyError);
+            }
+        }
+    }
+
+    await membresia.update({ estado: 'activa' }, { transaction: t });
+
+    // 5. Enviar notificación de activación exitosa al usuario
+    try {
+        await NotificacionDestinatario.notificar({
+            tipo: 'membresia',
+            titulo: 'Membresía activada exitosamente 🏆',
+            id_usuario: membresia.id_usuario,
+            creado_por: 'Sistema'
+        });
+    } catch (notifyError) {
+        console.error("Error al enviar notificación de membresía activada:", notifyError);
+    }
+
+    // 6. Si es un regalo (YA APROBADO), enviar notificación final al destinatario y al pagador
+    if (membresia.id_pagador) {
+        try {
+            // Al destinatario
+            await NotificacionDestinatario.notificar({
+                tipo: 'usuario',
+                titulo: 'Has recibido un regalo de membresía 🎁',
+                id_usuario: membresia.id_usuario,
+                creado_por: 'Sistema'
+            }); 
+        } catch (notifyError) {
+            console.error("Error al enviar notificaciones de regalo de membresía aprobado:", notifyError);
+        }
+    }
+
+    // 7. INTENTAR UPGRADES AUTOMÁTICOS
+    const { procesarAutoUpgradeInterno } = require("./redNivelesController");
+    
+    const id_padre_a_subir = lugar ? lugar.id_padre : nodoRed.id_padre;
+    
+    if (id_padre_a_subir) {
+        await procesarAutoUpgradeInterno(id_padre_a_subir, t);
+    }
+    
+    if (nodoRed && nodoRed.id_patrocinador) {
+        await procesarAutoUpgradeInterno(nodoRed.id_patrocinador, t);
+    }
+};
+
+// Aprobar membresía y colocar en la red si es necesario (Endpoint HTTP)
 const aprobarMembresia = async (req, res) => {
     const t = await sequelize.transaction();
     try {
@@ -639,129 +840,7 @@ const aprobarMembresia = async (req, res) => {
         if (!membresia) throw new Error("Solicitud no encontrada");
         if (membresia.estado !== 'pendiente') throw new Error("La solicitud ya ha sido procesada");
 
-        const id_usuario = membresia.id_usuario;
-
-        // 2. Obtener el registro de red del usuario
-        const nodoRed = await RedNiveles.findOne({ where: { id_usuario }, transaction: t });
-        if (!nodoRed) throw new Error("Registro de red no encontrado para el usuario");
-
-        let lugar = null;
-
-        // 3. Si el usuario está en Nivel 0 (Pendiente de activación inicial)
-        if (nodoRed.nivel_actual === 0) {
-            console.log(`[AprobarMembresia] Colocando usuario ${id_usuario} en la red desde patrocinador ${nodoRed.id_patrocinador}`);
-            
-            // Buscar lugar en la red por derrame desde su patrocinador
-            lugar = await encontrarPosicionSiguiente(nodoRed.id_patrocinador);
-
-            // Si el patrocinador no tiene lugar (o red llena bajo él), buscar desde la raíz (Primer usuario)
-            if (!lugar) {
-                console.log(`[AprobarMembresia] Sponsor ${nodoRed.id_patrocinador} full, buscando desde raíz`);
-                const firstUser = await Usuario.findOne({ order: [['id_usuario', 'ASC']], attributes: ['id_usuario'] });
-                const rootId = firstUser ? firstUser.id_usuario : 1;
-                lugar = await encontrarPosicionSiguiente(rootId);
-            }
-
-            if (!lugar) throw new Error("No hay espacios disponibles en la red global");
-
-            console.log(`[AprobarMembresia] Lugar encontrado: Padre=${lugar.id_padre}, Posicion=${lugar.posicion}`);
-
-            // Actualizar nodo de red con posición y nivel 1
-            await nodoRed.update({
-                id_padre: lugar.id_padre,
-                posicion: lugar.posicion,
-                nivel_actual: 1
-            }, { transaction: t });
-
-            // Pagar comisión al patrocinador (100% de la membresía inicial)
-            // Usamos el monto pagado en la membresía
-            await CreditoUsuario.increment('monto_credito', {
-                by: membresia.monto,
-                where: { id_usuario: nodoRed.id_patrocinador },
-                transaction: t
-            });
-
-            // Enviar notificación de comisión por referido
-            try {
-                await NotificacionDestinatario.notificar({
-                    tipo: 'financieros',
-                    titulo: 'Comisión por referido recibida 💰',
-                    id_usuario: nodoRed.id_patrocinador,
-                    creado_por: 'Sistema'
-                });
-            } catch (notifyError) {
-                console.error("Error al enviar notificación de comisión:", notifyError);
-            }
-
-            // (Aquí podrías registrar un movimiento en HistorialFinanciero si existiera)
-        } else {
-            // Si ya estaba en nivel 1+, es una renovación
-            if (nodoRed && nodoRed.id_padre) {
-                console.log(`[AprobarMembresia-Renovacion] Acreditando renovación de ${id_usuario} al padre ${nodoRed.id_padre} por monto ${membresia.monto}`);
-                await CreditoUsuario.increment('monto_credito', {
-                    by: membresia.monto,
-                    where: { id_usuario: nodoRed.id_padre },
-                    transaction: t
-                });
-
-                // Enviar notificación al padre
-                try {
-                    await NotificacionDestinatario.notificar({
-                        tipo: 'financieros',
-                        titulo: 'Comisión residual por renovación mensual 💰',
-                        id_usuario: nodoRed.id_padre,
-                        creado_por: 'Sistema'
-                    });
-                } catch (notifyError) {
-                    console.error("Error al enviar notificación de renovación al padre:", notifyError);
-                }
-            }
-        }
-
-        await membresia.update({ estado: 'activa' }, { transaction: t });
-
-        // 5. Enviar notificación de activación exitosa al usuario
-        try {
-            await NotificacionDestinatario.notificar({
-                tipo: 'membresia',
-                titulo: 'Membresía activada exitosamente 🏆',
-                id_usuario: membresia.id_usuario,
-                creado_por: 'Sistema'
-            });
-        } catch (notifyError) {
-            console.error("Error al enviar notificación de membresía activada:", notifyError);
-        }
-
-        // 6. Si es un regalo (YA APROBADO), enviar notificación final al destinatario y al pagador
-        if (membresia.id_pagador) {
-            try {
-                // Al destinatario
-                await NotificacionDestinatario.notificar({
-                    tipo: 'usuario',
-                    titulo: 'Has recibido un regalo de membresía 🎁',
-                    id_usuario: membresia.id_usuario,
-                    creado_por: 'Sistema'
-                }); 
-            } catch (notifyError) {
-                console.error("Error al enviar notificaciones de regalo de membresía aprobado:", notifyError);
-            }
-        }
-
-        // 7. INTENTAR UPGRADES AUTOMÁTICOS
-        // Primero para el padre (quien acaba de recibir un hijo o una renovación en su red)
-        // Segundo para el patrocinador (quien acaba de recibir la comisión)
-        const { procesarAutoUpgradeInterno } = require("./redNivelesController");
-        
-        // El padre puede venir de 'lugar' (nueva activación) o de 'nodoRed' (renovación)
-        const id_padre_a_subir = lugar ? lugar.id_padre : nodoRed.id_padre;
-        
-        if (id_padre_a_subir) {
-            await procesarAutoUpgradeInterno(id_padre_a_subir, t);
-        }
-        
-        if (nodoRed && nodoRed.id_patrocinador) {
-            await procesarAutoUpgradeInterno(nodoRed.id_patrocinador, t);
-        }
+        await _aprobarMembresiaInterno(membresia, t);
 
         await t.commit();
         res.json({ success: true, message: "Membresía aprobada y usuario activado en la red" });
@@ -895,5 +974,6 @@ module.exports = {
     obtenerProgresoMembresia,
     aprobarMembresia,
     regalarMembresia,
-    rechazarMembresia
+    rechazarMembresia,
+    intentarAutoRenovacion
 };

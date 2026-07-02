@@ -663,7 +663,7 @@ const actualizarRedCompleta = async (req, res) => {
             transaction: t
         });
 
-        // 2. Obtener configuración de días de gracia
+        // 2. Obtener configuración de días de gracia y membresía
         const Config = require("../models/configModel");
         const configGracia = await Config.findOne({ 
             where: { tipo_config: 'dias_gracia_membresia' },
@@ -671,6 +671,14 @@ const actualizarRedCompleta = async (req, res) => {
         });
         const diasGracia = configGracia ? parseInt(configGracia.valor, 10) : 5;
         const diasPermitidos = 30 + diasGracia;
+
+        const configMembresia = await Config.findOne({
+            where: { tipo_config: 'valor_membresia' },
+            transaction: t
+        });
+        const valorMembresia = configMembresia ? parseFloat(configMembresia.valor) : 0;
+        console.log(`[ReconstruccionRed] Configuración valor_membresia obtenida: $${valorMembresia}`);
+
         const hoy = new Date();
 
         // Mapa para controlar la vigencia del usuario en la red y su fecha de pago
@@ -713,7 +721,20 @@ const actualizarRedCompleta = async (req, res) => {
 
             if (membresiaReciente) {
                 const fechaPago = new Date(membresiaReciente.fecha);
-                const diasDiferencia = (hoy - fechaPago) / (1000 * 60 * 60 * 24);
+                let diasDiferencia = (hoy - fechaPago) / (1000 * 60 * 60 * 24);
+
+                // Auto-renovación si está en periodo de gracia
+                if (diasDiferencia >= 30 && diasDiferencia <= diasPermitidos && membresiaReciente.estado === 'activa') {
+                    console.log(`[ReconstruccionRed] Usuario ${id_usuario} está en periodo de gracia (días pasados: ${Math.floor(diasDiferencia)}). Intentando auto-renovación por $${valorMembresia}...`);
+                    const { intentarAutoRenovacion } = require("./MembresiaController");
+                    const autoRenovada = await intentarAutoRenovacion(id_usuario, valorMembresia, t);
+                    if (autoRenovada) {
+                        console.log(`[ReconstruccionRed] ✅ Auto-renovación exitosa para el usuario ${id_usuario}.`);
+                        diasDiferencia = 0; // Se auto-renovó, por lo que ahora está vigente
+                    } else {
+                        console.log(`[ReconstruccionRed] ❌ No se pudo auto-renovar para el usuario ${id_usuario}.`);
+                    }
+                }
 
                 if (membresiaReciente.estado === 'activa' && diasDiferencia > diasPermitidos) {
                     await membresiaReciente.update({ estado: 'vencida' }, { transaction: t });
