@@ -79,8 +79,33 @@ const login = async (req, res) => {
   const { identidad, password } = req.body;
 
   try {
+    // Normalizar el input de búsqueda eliminando espacios, guiones y el signo "+"
+    const searchNormalized = identidad.replace(/[\s\-+]/g, '');
+
     const user = await Usuario.findOne({
-      where: { identidad },
+      where: {
+        [Op.or]: [
+          { identidad: identidad },
+          // Buscar removiendo caracteres especiales del campo de la DB y del input
+          sequelize.where(
+            sequelize.fn('REPLACE', 
+              sequelize.fn('REPLACE', 
+                sequelize.fn('REPLACE', sequelize.col('telefono'), ' ', ''), 
+              '-', ''), 
+            '+', ''),
+            searchNormalized
+          ),
+          // Fallback por si introducen solo el número local (ej: ultimos 8 digitos)
+          searchNormalized.length >= 8 ? sequelize.where(
+            sequelize.fn('REPLACE', 
+              sequelize.fn('REPLACE', 
+                sequelize.fn('REPLACE', sequelize.col('telefono'), ' ', ''), 
+              '-', ''), 
+            '+', ''),
+            { [Op.like]: `%${searchNormalized.slice(-8)}` }
+          ) : null
+        ].filter(Boolean)
+      },
       include: [{ model: Rol, as: 'rol', attributes: ['id_rol', 'nombre_rol'] }],
     });
 

@@ -711,7 +711,8 @@ const actualizarRedCompleta = async (req, res) => {
                 continue;
             }
 
-            const membresiaReciente = await Membresia.findOne({
+            // FIX #2: let en lugar de const para poder recargar el objeto tras la auto-renovación
+            let membresiaReciente = await Membresia.findOne({
                 where: { id_usuario },
                 order: [['fecha', 'DESC']],
                 transaction: t
@@ -723,14 +724,31 @@ const actualizarRedCompleta = async (req, res) => {
                 const fechaPago = new Date(membresiaReciente.fecha);
                 let diasDiferencia = (hoy - fechaPago) / (1000 * 60 * 60 * 24);
 
-                // Auto-renovación si está en periodo de gracia
-                if (diasDiferencia >= 30 && diasDiferencia <= diasPermitidos && membresiaReciente.estado === 'activa') {
-                    console.log(`[ReconstruccionRed] Usuario ${id_usuario} está en periodo de gracia (días pasados: ${Math.floor(diasDiferencia)}). Intentando auto-renovación por $${valorMembresia}...`);
+                // FIX #1: Intentar auto-renovación si la membresía está 'vencida' O si está
+                // 'activa' pero ya cumplió los 30 días (periodo de gracia).
+                // Antes solo se intentaba si estado === 'activa', lo cual excluía a usuarios
+                // cuya membresía ya había sido marcada como 'vencida' por otras rutas.
+                const debeIntentarRenovacion =
+                    membresiaReciente.estado === 'vencida' ||
+                    (membresiaReciente.estado === 'activa' && diasDiferencia >= 30);
+
+                if (debeIntentarRenovacion) {
+                    console.log(`[ReconstruccionRed] Usuario ${id_usuario} con membresía ${membresiaReciente.estado} (días pasados: ${Math.floor(diasDiferencia)}). Intentando auto-renovación por $${valorMembresia}...`);
                     const { intentarAutoRenovacion } = require("./MembresiaController");
-                    const autoRenovada = await intentarAutoRenovacion(id_usuario, valorMembresia, t);
+                    // soloActivar=true: el rebuild re-posicionará al usuario en el paso 6,
+                    // no necesitamos que _aprobarMembresiaInterno lo coloque en la red de nuevo.
+                    const autoRenovada = await intentarAutoRenovacion(id_usuario, valorMembresia, t, true);
                     if (autoRenovada) {
                         console.log(`[ReconstruccionRed] ✅ Auto-renovación exitosa para el usuario ${id_usuario}.`);
-                        diasDiferencia = 0; // Se auto-renovó, por lo que ahora está vigente
+                        diasDiferencia = 0; // Vigente nuevamente
+
+                        // FIX #2: Recargar la membresía para que el check de 'activo' a continuación
+                        // lea la nueva membresía ('activa'), no el objeto antiguo ('vencida'/'pendiente').
+                        membresiaReciente = await Membresia.findOne({
+                            where: { id_usuario },
+                            order: [['fecha', 'DESC']],
+                            transaction: t
+                        });
                     } else {
                         console.log(`[ReconstruccionRed] ❌ No se pudo auto-renovar para el usuario ${id_usuario}.`);
                     }

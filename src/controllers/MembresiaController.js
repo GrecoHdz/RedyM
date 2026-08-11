@@ -647,10 +647,13 @@ const eliminarMembresia = async (req, res) => {
 };
 
 // Intentar auto-renovación de membresía si el usuario tiene saldo suficiente
-const intentarAutoRenovacion = async (id_usuario, valorMembresia, tPadre = null) => {
+// soloActivar = true: solo marca la membresía como activa sin re-posicionar en la red.
+// Usar soloActivar = true cuando se llama desde actualizarRedCompleta, ya que el rebuild
+// se encarga de re-posicionar a todos los usuarios en el paso 6.
+const intentarAutoRenovacion = async (id_usuario, valorMembresia, tPadre = null, soloActivar = false) => {
     let autoRenovada = false;
     try {
-        console.log(`[AutoRenovacion] 🔍 Iniciando auto-renovación para usuario ${id_usuario}. Valor membresía esperado: $${valorMembresia}`);
+        console.log(`[AutoRenovacion] 🔍 Iniciando auto-renovación para usuario ${id_usuario}. Valor membresía esperado: $${valorMembresia}. Modo: ${soloActivar ? 'soloActivar' : 'completo'}`);
         const saldo = await CreditoUsuario.findOne({ where: { id_usuario } });
         
         if (saldo) {
@@ -679,8 +682,17 @@ const intentarAutoRenovacion = async (id_usuario, valorMembresia, tPadre = null)
                     num_transaccion: 'AUTO_RENOVACION_SISTEMA'
                 }, { transaction: tAuto });
 
-                // Aprobar y colocar en red (o renovar)
-                await _aprobarMembresiaInterno(nuevaMembresia, tAuto);
+                if (soloActivar) {
+                    // Modo rebuild: solo marcar como activa.
+                    // El rebuild re-posiciona al usuario en el paso 6 y distribuye comisiones.
+                    // No llamamos _aprobarMembresiaInterno para evitar doble posicionamiento
+                    // y pagos de comisión incorrectos (entrada nueva vs. renovación).
+                    await nuevaMembresia.update({ estado: 'activa' }, { transaction: tAuto });
+                    console.log(`[AutoRenovacion] 🔄 Modo soloActivar: membresía marcada como activa sin re-posicionar en red.`);
+                } else {
+                    // Modo normal: aprobar y colocar/renovar en la red completa
+                    await _aprobarMembresiaInterno(nuevaMembresia, tAuto);
+                }
 
                 if (!tPadre) await tAuto.commit();
                 autoRenovada = true;
