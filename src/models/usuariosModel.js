@@ -33,12 +33,12 @@ const Usuario = sequelize.define("Usuario", {
     },
     identidad: {
         type: DataTypes.STRING(20),
-        allowNull: false,
+        allowNull: true,
         unique: 'uk_usuario_identidad'
     },
     email: {
         type: DataTypes.STRING(100),
-        allowNull: false,
+        allowNull: true,
         unique: 'uk_usuario_email',
         validate: {
             isEmail: true

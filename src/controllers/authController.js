@@ -85,7 +85,10 @@ const login = async (req, res) => {
     const user = await Usuario.findOne({
       where: {
         [Op.or]: [
-          { identidad: identidad },
+          identidad ? { identidad } : null,
+          identidad ? { telefono: identidad } : null,
+          searchNormalized ? { telefono: searchNormalized } : null,
+          searchNormalized ? { telefono: { [Op.like]: `%${searchNormalized}` } } : null,
           // Buscar removiendo caracteres especiales del campo de la DB y del input
           sequelize.where(
             sequelize.fn('REPLACE', 

@@ -185,10 +185,15 @@ const crearUsuario = async (req, res) => {
     const t = await sequelize.transaction();
 
     try {
-        // Verificar si ya existe
+        // Verificar si ya existe (filtrando condiciones para evitar valores undefined/null)
+        const orConditions = [];
+        if (email) orConditions.push({ email });
+        if (identidad) orConditions.push({ identidad });
+        if (telefono) orConditions.push({ telefono });
+
         const existe = await Usuario.findOne({
             where: {
-                [Op.or]: [{ email }, { identidad }, { telefono }]
+                [Op.or]: orConditions
             },
             transaction: t
         });
